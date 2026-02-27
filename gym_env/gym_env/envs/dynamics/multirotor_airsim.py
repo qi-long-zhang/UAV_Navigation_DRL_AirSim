@@ -156,6 +156,10 @@ class MultirotorDynamicsAirsim():
     def set_start(self, position, random_angle):
         self.start_position = position
         self.start_random_angle = random_angle
+
+    def set_goal_position(self, goal_position):
+        """Set a single fixed goal position."""
+        self.goal_position = [goal_position[0], goal_position[1], goal_position[2]]
     
     def set_goal(self, distance=None, random_angle=0, rect=None):
         if distance is not None:

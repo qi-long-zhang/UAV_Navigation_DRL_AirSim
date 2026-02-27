@@ -215,7 +215,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             start_position, goal_position = custom_routes[fig]
             self.dynamic_model.set_start(start_position, random_angle=math.pi * 2)
-            self.dynamic_model._set_goal_pose_single(goal_position)
+            self.dynamic_model.set_goal_position(goal_position)
             self.work_space_x = [-10, 100]
             self.work_space_y = [25, 280]
             self.work_space_z = [0.5, 15]
