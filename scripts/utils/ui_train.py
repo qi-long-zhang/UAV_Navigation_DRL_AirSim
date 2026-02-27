@@ -545,6 +545,9 @@ class TrainingUi(QWidget):
             elif self.cfg.get('options', 'env_name') == 'City':
                 self.traj_pw.setXRange(max=300, min=0)
                 self.traj_pw.setYRange(max=0, min=-300)
+            elif self.cfg.get('options', 'env_name') == 'Custom':
+                self.traj_pw.setXRange(max=100, min=-10)
+                self.traj_pw.setYRange(max=280, min=25)
 
         traj_plot_groupbox.setLayout(layout)
         return traj_plot_groupbox
