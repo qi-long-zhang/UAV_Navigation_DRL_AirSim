@@ -1,6 +1,7 @@
 import argparse
 import math
 import time
+from typing import Tuple
 
 import airsim
 import keyboard
@@ -12,7 +13,7 @@ def get_yaw_rad(client: airsim.MultirotorClient) -> float:
     return yaw
 
 
-def body_to_world(vx_body: float, vy_body: float, yaw_rad: float) -> tuple[float, float]:
+def body_to_world(vx_body: float, vy_body: float, yaw_rad: float) -> Tuple[float, float]:
     vx_world = vx_body * math.cos(yaw_rad) - vy_body * math.sin(yaw_rad)
     vy_world = vx_body * math.sin(yaw_rad) + vy_body * math.cos(yaw_rad)
     return vx_world, vy_world
