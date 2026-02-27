@@ -104,8 +104,8 @@ class MultirotorDynamicsAirsim():
 
     def set_action(self, action):
 
-        self.v_xy_sp = action[0] * 0.7
-        self.yaw_rate_sp = action[-1] * 2
+        self.v_xy_sp = action[0]
+        self.yaw_rate_sp = action[-1]
         if self.navigation_3d:
             self.v_z_sp = float(action[1])
         else:
