@@ -214,7 +214,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 raise Exception("Invalid fig for Custom env!", fig)
 
             start_position, goal_position = custom_routes[fig]
-            self.dynamic_model.set_start(start_position, random_angle=math.pi * 2)
+            self.dynamic_model.set_start(
+                start_position,
+                random_angle=math.radians(90),
+                yaw_offset=math.radians(45),
+            )
             self.dynamic_model.set_goal_position(goal_position)
             self.work_space_x = [-10, 100]
             self.work_space_y = [25, 280]

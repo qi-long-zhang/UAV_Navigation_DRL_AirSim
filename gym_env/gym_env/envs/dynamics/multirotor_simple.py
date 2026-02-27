@@ -33,6 +33,7 @@ class MultirotorDynamicsSimple():
         # start and goal position
         self.start_position = [0, 0, 0]
         self.start_random_angle = None
+        self.start_yaw_offset = 0.0
         self.goal_position = [0, 0, 0]
         self.goal_distance = None
         self.goal_random_angle = None
@@ -76,7 +77,11 @@ class MultirotorDynamicsSimple():
         # reset goal
         self.update_goal_pose()
         # reset start
-        yaw_noise = self.start_random_angle * np.random.random()
+        yaw_noise = self.start_yaw_offset + self.start_random_angle * np.random.random()
+        if yaw_noise > math.pi:
+            yaw_noise -= math.pi * 2
+        elif yaw_noise < -math.pi:
+            yaw_noise += math.pi * 2
         self.x = self.start_position[0]
         self.y = self.start_position[1]
         self.z = self.start_position[2]
@@ -142,9 +147,10 @@ class MultirotorDynamicsSimple():
         self.goal_position[2] = self.start_position[2]
         # print('New goal pose: ', self.goal_position)
 
-    def set_start(self, position, random_angle):
+    def set_start(self, position, random_angle, yaw_offset=0.0):
         self.start_position = position
         self.start_random_angle = random_angle
+        self.start_yaw_offset = yaw_offset
 
     def set_goal(self, distance=None, random_angle=0, rect=None):
         if distance is not None:
