@@ -198,6 +198,28 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             self.work_space_y = [-60, 40]
             self.work_space_z = [3, 30]
             self.max_episode_steps = 400
+        elif self.env_name == "Custom":
+            # Select start/goal pair through options.fig (1, 2, or 3).
+            try:
+                fig = cfg.getint("options", "fig")
+            except (NoOptionError, ValueError):
+                fig = 1
+
+            custom_routes = {
+                1: ([90, 35, 5], [0, 270, 5]),
+                2: ([50, 35, 5], [50, 270, 5]),
+                3: ([0, 35, 5], [90, 270, 5]),
+            }
+            if fig not in custom_routes:
+                raise Exception("Invalid fig for Custom env!", fig)
+
+            start_position, goal_position = custom_routes[fig]
+            self.dynamic_model.set_start(start_position, random_angle=math.pi * 2)
+            self.dynamic_model._set_goal_pose_single(goal_position)
+            self.work_space_x = [-10, 100]
+            self.work_space_y = [25, 280]
+            self.work_space_z = [0.5, 15]
+            self.max_episode_steps = 600
         else:
             raise Exception("Invalid env_name!", self.env_name)
 
