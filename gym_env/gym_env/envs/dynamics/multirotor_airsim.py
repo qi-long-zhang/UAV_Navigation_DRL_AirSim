@@ -32,6 +32,7 @@ class MultirotorDynamicsAirsim():
         self.goal_rect = None
         self.goal_points = []
         self.current_goal_index = 0
+        self.use_fixed_goal = False
 
         # states
         self.x = 0
@@ -79,6 +80,12 @@ class MultirotorDynamicsAirsim():
         if hasattr(self, 'goal_points') and len(self.goal_points) > 0:
             self.current_goal_index = 0
             self.update_current_goal()
+        elif self.use_fixed_goal:
+            # Keep fixed single-goal position and refresh goal_distance.
+            if self.navigation_3d:
+                self.goal_distance = self.get_distance_to_goal_3d()
+            else:
+                self.goal_distance = self.get_distance_to_goal_2d()
         else:
             # 否则使用旧的单目标随机生成逻辑
             self.update_goal_pose()
@@ -160,8 +167,10 @@ class MultirotorDynamicsAirsim():
     def set_goal_position(self, goal_position):
         """Set a single fixed goal position."""
         self.goal_position = [goal_position[0], goal_position[1], goal_position[2]]
+        self.use_fixed_goal = True
     
     def set_goal(self, distance=None, random_angle=0, rect=None):
+        self.use_fixed_goal = False
         if distance is not None:
             self.goal_distance = distance
         self.goal_random_angle = random_angle
@@ -169,6 +178,7 @@ class MultirotorDynamicsAirsim():
             self.goal_rect = rect
 
     def set_goals(self, goal_points):
+        self.use_fixed_goal = False
         self.goal_points = goal_points
         self.current_goal_index = 0
         self.update_current_goal()
