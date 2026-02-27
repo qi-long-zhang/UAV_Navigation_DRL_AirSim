@@ -15,18 +15,23 @@ def get_parser():
         description="Training navigation model using TD3")
     parser.add_argument('-config', required=True,
                         help='config file name, such as config0925.ini', default='config_default.ini')
-    parser.add_argument('-objective', required=True, help='training objective')
 
     return parser
 
 
 def main():
-    # select your config file here
-    # config_file = 'configs/config_SimpleAvoid_SimpleMultirotor.ini'
-    # config_file = 'configs/config_fixedwing.ini'
-    # config_file = 'configs/config_Mountains_Multirotor_3D.ini'
-    # config_file = 'configs/config_Maze_SimpleMultirotor_2D.ini'
-    config_file = 'configs/config_NH_center_Multirotor_3D.ini'
+    args = get_parser().parse_args()
+
+    # Accept:
+    # 1) config_Blocks_Multirotor_2D.ini
+    # 2) configs/config_Blocks_Multirotor_2D.ini
+    config_arg = args.config
+    if not config_arg.endswith(".ini"):
+        raise ValueError("config must end with .ini")
+    if not config_arg.startswith("configs/") and not config_arg.startswith("configs\\"):
+        config_file = f"configs/{config_arg}"
+    else:
+        config_file = config_arg
 
     # 1. Create the qt thread
     app = QtWidgets.QApplication(sys.argv)
@@ -47,7 +52,6 @@ def main():
 
     cfg = ConfigParser()
     cfg.read(config_file)
-
     training_thread.start()
 
     sys.exit(app.exec_())
