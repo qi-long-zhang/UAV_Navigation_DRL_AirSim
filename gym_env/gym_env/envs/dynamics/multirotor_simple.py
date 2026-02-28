@@ -48,7 +48,6 @@ class MultirotorDynamicsSimple():
         self.yaw = 0
         self.yaw_rate = 0
 
-        self.acc_xy_max = cfg.getfloat('multirotor', 'acc_xy_max')
         self.v_xy_max = cfg.getfloat('multirotor', 'v_xy_max')
         self.v_xy_min = cfg.getfloat('multirotor', 'v_xy_min')
         self.v_z_max = cfg.getfloat('multirotor', 'v_z_max')

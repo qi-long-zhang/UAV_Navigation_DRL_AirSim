@@ -50,7 +50,6 @@ class MultirotorDynamicsAirsim():
         self.yaw_rate_sp = 0
         
         # action space
-        self.acc_xy_max = cfg.getfloat('multirotor', 'acc_xy_max')
         self.v_xy_max = cfg.getfloat('multirotor', 'v_xy_max')
         self.v_xy_min = cfg.getfloat('multirotor', 'v_xy_min')
         self.v_z_max = cfg.getfloat('multirotor', 'v_z_max')
