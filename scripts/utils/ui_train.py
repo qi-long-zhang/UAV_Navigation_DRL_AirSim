@@ -549,6 +549,8 @@ class TrainingUi(QWidget):
                 background_image_path = 'resources/env_maps/blocks_custom.png'
                 img_data = Image.open(background_image_path)
                 image = np.copy(img_data)
+                # Keep world Y-axis positive upward while preserving full image coverage.
+                image = np.flipud(image)
 
                 self.background_img = pg.ImageItem(image)
                 self.traj_pw.addItem(self.background_img)
