@@ -546,8 +546,16 @@ class TrainingUi(QWidget):
                 self.traj_pw.setXRange(max=300, min=0)
                 self.traj_pw.setYRange(max=0, min=-300)
             elif self.cfg.get('options', 'env_name') == 'Custom':
-                self.traj_pw.setXRange(max=100, min=-10)
-                self.traj_pw.setYRange(max=280, min=25)
+                background_image_path = 'resources/env_maps/blocks_custom.png'
+                img_data = Image.open(background_image_path)
+                image = np.copy(img_data)
+                self.background_img = pg.ImageItem(image)
+                self.traj_pw.addItem(self.background_img)
+                # make sure image is behind other data
+                self.background_img.setZValue(-100)
+                self.background_img.setRect(pg.QtCore.QRectF(-25, -15, 50, 30))
+                self.traj_pw.setXRange(max=25, min=-25)
+                self.traj_pw.setYRange(max=15, min=-15)
 
         traj_plot_groupbox.setLayout(layout)
         return traj_plot_groupbox
@@ -605,13 +613,25 @@ class TrainingUi(QWidget):
 
             # set background image
             background_list = ['SimpleAvoid', 'NH_center',
-                            'City_400', 'Tree_200', 'Forest']
+                            'City_400', 'Tree_200', 'Forest', 'Custom']
             if self.cfg.get('options', 'env_name') in background_list:
                 self.traj_pw.addItem(self.background_img)
 
-            # plot start, goal and trajectory
-            self.traj_pw.plot([start[0]], [start[1]], symbol='o')
-            self.traj_pw.plot([goal[0]], [goal[1]], symbol='o')
+            # plot start, goal and trajectory (styled markers for readability)
+            self.traj_pw.plot(
+                [start[0]],
+                [start[1]],
+                symbol='t1',
+                symbolBrush='#00B894',
+                symbolPen=pg.mkPen(color='#0B3D2E', width=1.5),
+            )
+            self.traj_pw.plot(
+                [goal[0]],
+                [goal[1]],
+                symbol='d',
+                symbolBrush='#F4B400',
+                symbolPen=pg.mkPen(color='#7A4E00', width=1.5),
+            )
             self.traj_pw.plot(
                 trajectory_list[..., 0], trajectory_list[..., 1], pen=self.pen_red)
 
