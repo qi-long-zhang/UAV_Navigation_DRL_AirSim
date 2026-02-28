@@ -549,13 +549,23 @@ class TrainingUi(QWidget):
                 background_image_path = 'resources/env_maps/blocks_custom.png'
                 img_data = Image.open(background_image_path)
                 image = np.copy(img_data)
+
                 self.background_img = pg.ImageItem(image)
                 self.traj_pw.addItem(self.background_img)
                 # make sure image is behind other data
                 self.background_img.setZValue(-100)
-                self.background_img.setRect(pg.QtCore.QRectF(-25, -15, 50, 30))
-                self.traj_pw.setXRange(max=25, min=-25)
-                self.traj_pw.setYRange(max=15, min=-15)
+
+                # Custom env uses UI horizontal axis as Y and vertical axis as X.
+                self.background_img.setRect(pg.QtCore.QRectF(-15, -25, 30, 50))
+
+                self.traj_pw.setXRange(max=15, min=-15)
+                self.traj_pw.setYRange(max=25, min=-25)
+                self.traj_pw.setLabel('bottom', 'Y Position', units='m')
+                self.traj_pw.setLabel('left', 'X Position', units='m')
+                self.traj_pw.getViewBox().invertY(False)
+
+                # Lock equal axis scale so the mapped 30x50 area remains 3:5.
+                self.traj_pw.setAspectLocked(True, ratio=1)
 
         traj_plot_groupbox.setLayout(layout)
         return traj_plot_groupbox
@@ -618,22 +628,38 @@ class TrainingUi(QWidget):
                 self.traj_pw.addItem(self.background_img)
 
             # plot start, goal and trajectory (styled markers for readability)
+            is_custom = self.cfg.get('options', 'env_name') == 'Custom'
+
+            start_x = start[1] if is_custom else start[0]
+            start_y = start[0] if is_custom else start[1]
+            
+            goal_x = goal[1] if is_custom else goal[0]
+            goal_y = goal[0] if is_custom else goal[1]
+
             self.traj_pw.plot(
-                [start[0]],
-                [start[1]],
+                [start_x],
+                [start_y],
                 symbol='t1',
                 symbolBrush='#00B894',
                 symbolPen=pg.mkPen(color='#0B3D2E', width=1.5),
             )
             self.traj_pw.plot(
-                [goal[0]],
-                [goal[1]],
+                [goal_x],
+                [goal_y],
                 symbol='d',
                 symbolBrush='#F4B400',
                 symbolPen=pg.mkPen(color='#7A4E00', width=1.5),
             )
+            
+            if is_custom and len(trajectory_list) > 0:
+                traj_x = trajectory_list[..., 1]
+                traj_y = trajectory_list[..., 0]
+            else:
+                traj_x = trajectory_list[..., 0]
+                traj_y = trajectory_list[..., 1]
+                
             self.traj_pw.plot(
-                trajectory_list[..., 0], trajectory_list[..., 1], pen=self.pen_red)
+                traj_x, traj_y, pen=self.pen_red)
 
 
 def main():
