@@ -88,7 +88,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             self.work_space_x = [-140, 140]
             self.work_space_y = [-140, 140]
             self.work_space_z = [0.5, 20]
-            self.max_episode_steps = 1000
         elif self.env_name == "NH_tree":
             start_position = [110, 180, 5]
             goal_distance = 90
@@ -100,7 +99,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             ]
             self.work_space_y = [start_position[1] - 30, start_position[1] + 30]
             self.work_space_z = [0.5, 10]
-            self.max_episode_steps = 400
         elif self.env_name == "City":
             start_position = [40, -30, 40]
             goal_position = [280, -200, 40]
@@ -109,7 +107,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             self.work_space_x = [-100, 350]
             self.work_space_y = [-300, 100]
             self.work_space_z = [0, 100]
-            self.max_episode_steps = 400
         elif self.env_name == "City_400":
             # note: the start and end points will be covered by update_start_and_goal_pose_random function
             start_position = [0, 0, 50]
@@ -119,7 +116,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             self.work_space_x = [-220, 220]
             self.work_space_y = [-220, 220]
             self.work_space_z = [0, 100]
-            self.max_episode_steps = 800
         elif self.env_name == "Tree_200":
             # note: the start and end points will be covered by
             # update_start_and_goal_pose_random function
@@ -130,7 +126,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             self.work_space_x = [-100, 100]
             self.work_space_y = [-100, 100]
             self.work_space_z = [0, 100]
-            self.max_episode_steps = 600
         elif self.env_name == "SimpleAvoid":
             start_position = [0, 0, 5]
             goal_distance = 50
@@ -147,7 +142,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 start_position[1] + goal_distance + 10,
             ]
             self.work_space_z = [0.5, 50]
-            self.max_episode_steps = 400
         elif self.env_name == "Forest":
             start_position = [0, 0, 10]
             goal_position = [280, -200, 50]
@@ -156,7 +150,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             self.work_space_x = [-100, 100]
             self.work_space_y = [-100, 100]
             self.work_space_z = [0, 100]
-            self.max_episode_steps = 300
         elif self.env_name == "Trees":
             start_position = [0, 0, 5]
             goal_distance = 70
@@ -173,7 +166,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 start_position[1] + goal_distance + 10,
             ]
             self.work_space_z = [0.5, 50]
-            self.max_episode_steps = 500
         elif self.env_name == "Mountains":
             start_position = [0, 0, 10]
             self.goal_points = [
@@ -188,7 +180,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             self.work_space_x = None
             self.work_space_y = None
             self.work_space_z = None
-            self.max_episode_steps = None
         elif self.env_name == "Mountains_Easy":
             start_position = [0, 0, 10]
             self.goal_points = [[-0.55265, -31.9786, 19.0225]]
@@ -197,7 +188,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             self.work_space_x = [-40, 40]
             self.work_space_y = [-60, 40]
             self.work_space_z = [3, 30]
-            self.max_episode_steps = 400
         elif self.env_name == "Custom":
             # Select start/goal pair through options.fig (1, 2, or 3).
             try:
@@ -223,7 +213,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             self.work_space_x = [-10, 100]
             self.work_space_y = [25, 280]
             self.work_space_z = [0.5, 15]
-            self.max_episode_steps = 600
         else:
             raise Exception("Invalid env_name!", self.env_name)
 
@@ -240,6 +229,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self.previous_distance_from_des_point = 0
 
         # other settings
+        self.max_episode_steps = cfg.getint("environment", "max_steps")
         self.crash_distance = cfg.getint("environment", "crash_distance")
         self.accept_radius = cfg.getint("environment", "accept_radius")
 
