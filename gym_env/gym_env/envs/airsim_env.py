@@ -196,22 +196,39 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 fig = 1
 
             custom_routes = {
-                1: ([90, 35, 5], [0, 270, 5]),
-                2: ([50, 35, 5], [50, 270, 5]),
-                3: ([0, 35, 5], [90, 270, 5]),
+                1: {
+                    "start": [-23, -13, 5],
+                    "goal": [23, 13, 5],
+                    "yaw_offset_deg": 0,
+                    "yaw_random_deg": 90,
+                },
+                2: {
+                    "start": [-23, 0, 5],
+                    "goal": [23, 0, 5],
+                    "yaw_offset_deg": -60,
+                    "yaw_random_deg": 120,
+                },
+                3: {
+                    "start": [-23, 13, 5],
+                    "goal": [23, -13, 5],
+                    "yaw_offset_deg": -90,
+                    "yaw_random_deg": 90,
+                },
             }
             if fig not in custom_routes:
                 raise Exception("Invalid fig for Custom env!", fig)
 
-            start_position, goal_position = custom_routes[fig]
+            route_cfg = custom_routes[fig]
+            start_position = route_cfg["start"]
+            goal_position = route_cfg["goal"]
             self.dynamic_model.set_start(
                 start_position,
-                random_angle=math.radians(90),
-                yaw_offset=math.radians(45),
+                random_angle=math.radians(route_cfg["yaw_random_deg"]),
+                yaw_offset=math.radians(route_cfg["yaw_offset_deg"]),
             )
             self.dynamic_model.set_goal_position(goal_position)
-            self.work_space_x = [-10, 100]
-            self.work_space_y = [25, 280]
+            self.work_space_x = [-25, 25]
+            self.work_space_y = [-15, 15]
             self.work_space_z = [0.5, 15]
         else:
             raise Exception("Invalid env_name!", self.env_name)
@@ -768,8 +785,10 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         reward_crash = -20
         reward_outside = -10
 
-        if self.env_name in {"NH_center", "Custom"}:
+        if self.env_name == "NH_center":
             distance_reward_coef = 500
+        elif self.env_name == "Custom":
+            distance_reward_coef = 100
         else:
             distance_reward_coef = 50
 
