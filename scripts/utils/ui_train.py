@@ -40,6 +40,7 @@ class TrainingUi(QWidget):
     def init_ui(self):
         """ init UI: trajectory + last episode info only """
         self.setWindowTitle("Training UI")
+        self.resize(1100, 750)
 
         pg.setConfigOptions(leftButtonPan=False)
         pg.setConfigOption('background', 'w')
@@ -418,8 +419,6 @@ class TrainingUi(QWidget):
 # trajectory plot groupbox
     def create_traj_plot_groupbox(self):
         traj_plot_groupbox = QGroupBox('Navigation Dashboard')
-        traj_plot_groupbox.setFixedHeight(600)
-        traj_plot_groupbox.setFixedWidth(600)
         layout = QVBoxLayout()
 
         # 1. 读取配置，判断是否开启 3D
