@@ -936,7 +936,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             reward = (
                 reward_distance
-                - 0.15 * punishment_trajectory_deviation
+                - 0.1 * punishment_trajectory_deviation
                 - 0.2 * punishment_obs
                 - 0.1 * punishment_action
                 - 0.5 * yaw_error_cost
