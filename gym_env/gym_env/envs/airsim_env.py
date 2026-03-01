@@ -220,6 +220,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             route_cfg = custom_routes[fig]
             start_position = route_cfg["start"]
+            self.start_position = start_position  # Save for reward calculation
             goal_position = route_cfg["goal"]
             self.dynamic_model.set_start(
                 start_position,
@@ -385,6 +386,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             reward = self.compute_reward_final(done, action)
         elif self.reward_type == "reward_single_goal":
             reward = self.compute_reward_single_goal(done, action)
+        elif self.reward_type == "reward_custom":
+            reward = self.compute_reward_custom(done, action)
         else:
             reward = self.compute_reward(done, action)
 
@@ -846,6 +849,100 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             reward = (
                 reward_distance
                 - 0.1 * punishment_pose
+                - 0.2 * punishment_obs
+                - 0.1 * punishment_action
+                - 0.5 * yaw_error_cost
+            )
+        else:
+            if self.is_in_desired_pose():
+                reward = reward_reach
+            if self.is_crashed():
+                reward = reward_crash
+            if self.is_not_inside_workspace():
+                reward = reward_outside
+
+        return reward
+
+    def compute_reward_custom(self, done, action):
+        reward = 0
+        reward_reach = 10
+        reward_crash = -20
+        reward_outside = -20
+
+        if self.env_name == "NH_center":
+            distance_reward_coef = 500
+        elif self.env_name == "Custom":
+            distance_reward_coef = 100
+        else:
+            distance_reward_coef = 50
+
+        if not done:
+            # 1 - goal reward
+            distance_now = self.get_distance_to_goal_3d()
+            reward_distance = (
+                distance_reward_coef
+                * (self.previous_distance_from_des_point - distance_now)
+                / self.dynamic_model.goal_distance
+            )  # normalized to 100 according to goal_distance
+            self.previous_distance_from_des_point = distance_now
+
+            # 2 - Position punishment
+            current_pose = self.dynamic_model.get_position()
+            goal_pose = self.dynamic_model.goal_position
+            x = current_pose[0]
+            y = current_pose[1]
+            z = current_pose[2]
+            x_g = goal_pose[0]
+            y_g = goal_pose[1]
+            z_g = goal_pose[2]
+
+            # Use actual start position for calculating deviation from the straight line
+            x_s = self.start_position[0]
+            y_s = self.start_position[1]
+            z_s = self.start_position[2]
+
+            # Tighten the deviation penalty (divisor changed from 10 to 5)
+            punishment_xy = np.clip(self.getDis(x, y, x_s, y_s, x_g, y_g) / 5, 0, 1)
+            # Maintain Z alignment punishment
+            punishment_z = 0.5 * np.clip((z - z_g) / 5, 0, 1)
+
+            punishment_trajectory_deviation = punishment_xy + punishment_z
+
+            if self.min_distance_to_obstacles < 1.5:
+                # Exponential penalty: sharply increases as distance approaches crash_distance
+                # Normalizing the distance to a [0, 1] range where 0 is the threshold and 1 is crash
+                normalized_dist = np.clip(
+                    (1.5 - self.min_distance_to_obstacles)
+                    / (1.5 - self.crash_distance),
+                    0,
+                    1,
+                )
+                punishment_obs = normalized_dist ** 2  # Exponential decay (convex shape)
+            else:
+                punishment_obs = 0
+
+            punishment_action = 0
+
+            # add yaw_rate cost
+            yaw_speed_cost = abs(action[-1]) / self.dynamic_model.yaw_rate_max_rad
+
+            if self.dynamic_model.navigation_3d:
+                # add action and z error cost
+                v_z_cost = (abs(action[1]) / self.dynamic_model.v_z_max) ** 2
+                z_err_cost = (
+                    abs(self.dynamic_model.state_raw[1])
+                    / self.dynamic_model.max_vertical_difference
+                ) ** 2
+                punishment_action += v_z_cost + z_err_cost
+
+            punishment_action += yaw_speed_cost
+
+            yaw_error = self.dynamic_model.state_raw[2]
+            yaw_error_cost = abs(yaw_error / 90)
+
+            reward = (
+                reward_distance
+                - 0.15 * punishment_trajectory_deviation
                 - 0.2 * punishment_obs
                 - 0.1 * punishment_action
                 - 0.5 * yaw_error_cost
