@@ -783,7 +783,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         reward = 0
         reward_reach = 10
         reward_crash = -20
-        reward_outside = -10
+        reward_outside = -20
 
         if self.env_name == "NH_center":
             distance_reward_coef = 500
