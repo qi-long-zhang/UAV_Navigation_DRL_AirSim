@@ -247,7 +247,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         # other settings
         self.max_episode_steps = cfg.getint("environment", "max_steps")
-        self.crash_distance = cfg.getint("environment", "crash_distance")
+        self.crash_distance = cfg.getfloat("environment", "crash_distance")
         self.accept_radius = cfg.getint("environment", "accept_radius")
 
         self.max_depth_meters = cfg.getint("environment", "max_depth_meters")
