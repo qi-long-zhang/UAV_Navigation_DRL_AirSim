@@ -62,16 +62,16 @@ class MultirotorDynamicsAirsim():
                 self.state_feature_length = 6
             else:
                 self.state_feature_length = 3
-            self.action_space = spaces.Box(low=np.array([self.v_xy_min, -self.v_z_max, -self.yaw_rate_max_rad]),
-                                           high=np.array([self.v_xy_max, self.v_z_max, self.yaw_rate_max_rad]),
+            self.action_space = spaces.Box(low=np.array([self.v_xy_min, -self.v_z_max, -self.yaw_rate_max_rad], dtype=np.float32),
+                                           high=np.array([self.v_xy_max, self.v_z_max, self.yaw_rate_max_rad], dtype=np.float32),
                                            dtype=np.float32)
         else:
             if self.using_velocity_state:
                 self.state_feature_length = 4
             else:
                 self.state_feature_length = 2
-            self.action_space = spaces.Box(low=np.array([self.v_xy_min, -self.yaw_rate_max_rad]),
-                                           high=np.array([self.v_xy_max, self.yaw_rate_max_rad]),
+            self.action_space = spaces.Box(low=np.array([self.v_xy_min, -self.yaw_rate_max_rad], dtype=np.float32),
+                                           high=np.array([self.v_xy_max, self.yaw_rate_max_rad], dtype=np.float32),
                                            dtype=np.float32)
 
     def reset(self):

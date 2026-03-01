@@ -50,8 +50,8 @@ class FixedwingDynamicsSimple():
         self.pitch_flap_deg = cfg.getfloat('fixedwing', 'pitch_flap_deg')
 
         # action space
-        self.action_space = spaces.Box(low=np.array([-self.roll_max]),
-                                       high=np.array([self.roll_max]),
+        self.action_space = spaces.Box(low=np.array([-self.roll_max], dtype=np.float32),
+                                       high=np.array([self.roll_max], dtype=np.float32),
                                        dtype=np.float32)
 
         self.state_feature_length = cfg.getint('options', 'state_feature_num')
