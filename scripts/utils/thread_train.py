@@ -243,6 +243,10 @@ class TrainingThread(QtCore.QThread):
         print('training finished')
         print('model saved to: {}'.format(model_path))
 
+        if self.cfg.getboolean('options', 'use_wandb'):
+            print("Closing wandb...")
+            wandb.finish()
+
 
 def main():
     parser = get_parser()
