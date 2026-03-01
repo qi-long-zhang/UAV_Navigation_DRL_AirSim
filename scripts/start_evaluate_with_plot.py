@@ -40,11 +40,8 @@ def main():
     # 2. Start training thread
     evaluate_thread = EvaluateThread(
         eval_path, config_file, model_file, total_eval_episodes)
-    evaluate_thread.env.action_signal.connect(gui.action_cb)
-    evaluate_thread.env.state_signal.connect(gui.state_cb)
-    evaluate_thread.env.attitude_signal.connect(gui.attitude_plot_cb)
-    evaluate_thread.env.reward_signal.connect(gui.reward_plot_cb)
     evaluate_thread.env.pose_signal.connect(gui.traj_plot_cb)
+    evaluate_thread.env.episode_signal.connect(gui.episode_end_cb)
 
     cfg = ConfigParser()
     cfg.read(config_file)

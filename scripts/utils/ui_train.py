@@ -38,57 +38,30 @@ class TrainingUi(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        """ init UI
-            Include four parts:
-                Action
-                State
-                Attitude
-                Reward and trajectory
-        """
+        """ init UI: trajectory + last episode info only """
         self.setWindowTitle("Training UI")
-        # self.showFullScreen()
 
         pg.setConfigOptions(leftButtonPan=False)
         pg.setConfigOption('background', 'w')
         pg.setConfigOption('foreground', 'k')
-        pg.setConfigOption('imageAxisOrder', 'row-major')  # best performance
+        pg.setConfigOption('imageAxisOrder', 'row-major')
 
         self.max_len = 100
         self.ptr = -self.max_len
 
-        # action, state_feature, attitude, trajectory
         self.dynamics = self.cfg.get('options', 'dynamic_name')
-        if self.dynamics == 'SimpleFixedwing':
-            action_plot_gb = self.create_actionPlot_groupBox_fixed_wing()
-        else:
-            action_plot_gb = self.create_actionPlot_groupBox_multirotor()
-        state_plot_gb = self.create_state_plot_groupbox()
-        attitude_plot_gb = self.create_attitude_plot_groupbox()
-        reward_plot_gb = self.create_reward_plot_groupbox()
-        lgmd_plot_gb = self.create_lgmd_plot_groupbox()
+
         traj_plot_gb = self.create_traj_plot_groupbox()
-
-        right_widget = QWidget()
-        vlayout = QVBoxLayout()
-        vlayout.addWidget(reward_plot_gb)
-
-        if self.cfg.has_option('options', 'perception'):
-            if self.cfg.get('options', 'perception') == 'lgmd':
-                vlayout.addWidget(lgmd_plot_gb)
-
-        vlayout.addWidget(traj_plot_gb)
-        right_widget.setLayout(vlayout)
+        episode_info_gb = self.create_episode_info_groupbox()
 
         main_layout = QHBoxLayout()
-        main_layout.addWidget(action_plot_gb)
-        main_layout.addWidget(state_plot_gb)
-        main_layout.addWidget(attitude_plot_gb)
-        main_layout.addWidget(right_widget)
+        main_layout.addWidget(traj_plot_gb)
+        main_layout.addWidget(episode_info_gb)
 
         self.setLayout(main_layout)
 
-        self.pen_red = pg.mkPen(color='r', width=2)    # used for cmd
-        self.pen_blue = pg.mkPen(color='b', width=1)   # used for real data
+        self.pen_red = pg.mkPen(color='r', width=2)
+        self.pen_blue = pg.mkPen(color='b', width=1)
         self.pen_green = pg.mkPen(color='g', width=2)
 
     def update_value_list(self, list, value):
@@ -402,6 +375,45 @@ class TrainingUi(QWidget):
         # sns.barplot(x=x, y=lgmd_split, ax=subplot1)
         # subplot1.set(title='lgmd out split')
         # self.lgmd_pw_3.draw()
+
+# episode info groupbox
+    def create_episode_info_groupbox(self):
+        from PyQt5.QtWidgets import QLabel, QFormLayout
+        from PyQt5.QtCore import Qt
+
+        gb = QGroupBox('Last Episode Info')
+        gb.setFixedWidth(260)
+        form = QFormLayout()
+        form.setVerticalSpacing(12)
+
+        def make_label(text='—'):
+            lbl = QLabel(text)
+            lbl.setAlignment(Qt.AlignRight)
+            lbl.setStyleSheet("font-size: 14pt; font-weight: bold;")
+            return lbl
+
+        self.lbl_reward     = make_label()
+        self.lbl_steps      = make_label()
+        self.lbl_done       = make_label()
+        self.lbl_min_dist   = make_label()
+
+        form.addRow(QLabel('Total Reward:'),        self.lbl_reward)
+        form.addRow(QLabel('Episode Steps:'),       self.lbl_steps)
+        form.addRow(QLabel('Done Reason:'),         self.lbl_done)
+        form.addRow(QLabel('Min Dist to Obs (m):'), self.lbl_min_dist)
+
+        gb.setLayout(form)
+        return gb
+
+    def episode_end_cb(self, total_reward, episode_steps, done_reason, min_dist):
+        color_map = {'reach': '#28a745', 'crash': '#dc3545',
+                     'outside': '#fd7e14', 'timeout': '#6c757d'}
+        color = color_map.get(done_reason, '#333')
+        self.lbl_reward.setText(f'{total_reward:.2f}')
+        self.lbl_steps.setText(str(episode_steps))
+        self.lbl_done.setText(done_reason.upper())
+        self.lbl_done.setStyleSheet(f"font-size: 14pt; font-weight: bold; color: {color};")
+        self.lbl_min_dist.setText(f'{min_dist:.2f}')
 
 # trajectory plot groupbox
     def create_traj_plot_groupbox(self):

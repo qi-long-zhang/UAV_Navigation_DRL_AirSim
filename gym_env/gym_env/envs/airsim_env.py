@@ -26,6 +26,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
     reward_signal = pyqtSignal(int, float, float)
     pose_signal = pyqtSignal(np.ndarray, np.ndarray, np.ndarray, np.ndarray)
     lgmd_signal = pyqtSignal(float, float, np.ndarray)
+    episode_signal = pyqtSignal(float, int, str, float)  # total_reward, episode_steps, done_reason, min_dist_to_obs
 
     def __init__(self) -> None:
         super().__init__()
@@ -392,6 +393,22 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             reward = self.compute_reward(done, action)
 
         self.cumulated_episode_reward += reward
+
+        if done:
+            if self.is_in_desired_pose():
+                done_reason = 'reach'
+            elif self.is_crashed():
+                done_reason = 'crash'
+            elif self.is_not_inside_workspace():
+                done_reason = 'outside'
+            else:
+                done_reason = 'timeout'
+            self.episode_signal.emit(
+                self.cumulated_episode_reward,
+                int(self.step_num),
+                done_reason,
+                float(self.min_distance_to_obstacles),
+            )
 
         # ----------------print info---------------------------
         self.print_train_info_airsim(action, obs, reward, info)
