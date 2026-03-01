@@ -908,9 +908,9 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             punishment_trajectory_deviation = punishment_xy + punishment_z
 
-            if self.min_distance_to_obstacles < 1.5:
+            if self.min_distance_to_obstacles < 2.0:
                 punishment_obs = 1 - np.clip(
-                    (self.min_distance_to_obstacles - self.crash_distance) / (1.5 - self.crash_distance), 0, 1
+                    (self.min_distance_to_obstacles - self.crash_distance) / (2.0 - self.crash_distance), 0, 1
                 )
             else:
                 punishment_obs = 0
