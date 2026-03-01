@@ -383,14 +383,20 @@ class TrainingUi(QWidget):
         from PyQt5.QtCore import Qt
 
         gb = QGroupBox('Last Episode Info')
-        gb.setFixedWidth(260)
+        gb.setFixedWidth(300)
+        gb.setStyleSheet("QGroupBox { font-size: 13pt; font-weight: bold; }")
         form = QFormLayout()
-        form.setVerticalSpacing(12)
+        form.setVerticalSpacing(16)
 
         def make_label(text='—'):
             lbl = QLabel(text)
             lbl.setAlignment(Qt.AlignRight)
-            lbl.setStyleSheet("font-size: 14pt; font-weight: bold;")
+            lbl.setStyleSheet("font-size: 20pt; font-weight: bold;")
+            return lbl
+
+        def make_row_label(text):
+            lbl = QLabel(text)
+            lbl.setStyleSheet("font-size: 13pt; color: #555;")
             return lbl
 
         self.lbl_reward     = make_label()
@@ -398,10 +404,10 @@ class TrainingUi(QWidget):
         self.lbl_done       = make_label()
         self.lbl_min_dist   = make_label()
 
-        form.addRow(QLabel('Total Reward:'),        self.lbl_reward)
-        form.addRow(QLabel('Episode Steps:'),       self.lbl_steps)
-        form.addRow(QLabel('Done Reason:'),         self.lbl_done)
-        form.addRow(QLabel('Min Dist to Obs (m):'), self.lbl_min_dist)
+        form.addRow(make_row_label('Total Reward:'),        self.lbl_reward)
+        form.addRow(make_row_label('Episode Steps:'),       self.lbl_steps)
+        form.addRow(make_row_label('Done Reason:'),         self.lbl_done)
+        form.addRow(make_row_label('Min Dist to Obs (m):'), self.lbl_min_dist)
 
         gb.setLayout(form)
         return gb
@@ -413,7 +419,7 @@ class TrainingUi(QWidget):
         self.lbl_reward.setText(f'{total_reward:.2f}')
         self.lbl_steps.setText(str(episode_steps))
         self.lbl_done.setText(done_reason.upper())
-        self.lbl_done.setStyleSheet(f"font-size: 14pt; font-weight: bold; color: {color};")
+        self.lbl_done.setStyleSheet(f"font-size: 20pt; font-weight: bold; color: {color};")
         self.lbl_min_dist.setText(f'{min_dist:.2f}')
 
 # trajectory plot groupbox
