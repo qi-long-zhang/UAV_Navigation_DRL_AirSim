@@ -917,7 +917,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                     0,
                     1,
                 )
-                punishment_obs = normalized_dist ** 2  # Exponential decay (convex shape)
+                punishment_obs = normalized_dist ** 2
             else:
                 punishment_obs = 0
 
@@ -950,9 +950,9 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         else:
             if self.is_in_desired_pose():
                 reward = reward_reach
-            if self.is_crashed():
+            elif self.is_crashed():
                 reward = reward_crash
-            if self.is_not_inside_workspace():
+            elif self.is_not_inside_workspace():
                 reward = reward_outside
 
         return reward
