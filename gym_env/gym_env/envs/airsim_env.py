@@ -945,7 +945,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 - 0.15 * punishment_trajectory_deviation
                 - 0.2 * punishment_obs
                 - 0.1 * punishment_action
-                - 0.2 * yaw_error_cost
+                - 0.5 * yaw_error_cost
             )
         else:
             if self.is_in_desired_pose():
