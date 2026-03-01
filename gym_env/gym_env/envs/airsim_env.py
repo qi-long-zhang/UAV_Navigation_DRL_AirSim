@@ -901,8 +901,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             y_s = self.start_position[1]
             z_s = self.start_position[2]
 
-            # Tighten the deviation penalty (divisor changed from 10 to 5)
-            punishment_xy = np.clip(self.getDis(x, y, x_s, y_s, x_g, y_g) / 5, 0, 1)
+            # Relax the deviation penalty to allow detour around obstacles
+            punishment_xy = np.clip(self.getDis(x, y, x_s, y_s, x_g, y_g) / 10, 0, 1)
             # Maintain Z alignment punishment
             punishment_z = 0.5 * np.clip((z - z_g) / 5, 0, 1)
 
@@ -945,7 +945,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 - 0.15 * punishment_trajectory_deviation
                 - 0.2 * punishment_obs
                 - 0.1 * punishment_action
-                - 0.5 * yaw_error_cost
+                - 0.2 * yaw_error_cost
             )
         else:
             if self.is_in_desired_pose():
