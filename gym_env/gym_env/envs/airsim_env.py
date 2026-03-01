@@ -395,11 +395,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self.cumulated_episode_reward += reward
 
         if done:
-            if self.is_in_desired_pose():
+            if info['is_success']:
                 done_reason = 'reach'
-            elif self.is_crashed():
+            elif info['is_crash']:
                 done_reason = 'crash'
-            elif self.is_not_inside_workspace():
+            elif info['is_not_in_workspace']:
                 done_reason = 'outside'
             else:
                 done_reason = 'timeout'
