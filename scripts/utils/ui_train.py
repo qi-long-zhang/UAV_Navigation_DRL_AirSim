@@ -474,7 +474,7 @@ class TrainingUi(QWidget):
             self.plot_xy_goal = self.traj_pw_xy.plot(symbol='star', symbolBrush='#dc3545', symbolPen='w', symbolSize=18)
             # 4. 航向箭头 (当前前进方向)
             self.heading_arrow_xy = pg.ArrowItem(
-                angle=0, tipAngle=35, baseAngle=15, headLen=16,
+                angle=0, tipAngle=35, baseAngle=15, headLen=10,
                 tailLen=0, pen=pg.mkPen('#b22222', width=1), brush='#e63946'
             )
             self.heading_arrow_xy.setVisible(False)
@@ -699,15 +699,16 @@ class TrainingUi(QWidget):
             vx, vy = float(velocity[0]), float(velocity[1])
             if vx**2 + vy**2 > 1e-4:
                 if is_custom:
-                    # Custom 环境 x/y 轴互换 (plot_x=world_y, plot_y=world_x)
-                    plot_vx, plot_vy = vy, vx
+                    # Custom env: plot_x=world_y, plot_y=world_x, y-up view
+                    # screen_x=vy_world, screen_y=-vx_world → angle=atan2(-vx, -vy)
                     ax, ay = float(trajectory_list[-1, 1]), float(trajectory_list[-1, 0])
+                    angle = math.degrees(math.atan2(-vx, -vy))
                 else:
-                    plot_vx, plot_vy = vx, vy
+                    # Standard envs: invertY active → vy_screen = -vy_data
                     ax, ay = float(trajectory_list[-1, 0]), float(trajectory_list[-1, 1])
-                angle = math.degrees(math.atan2(-plot_vy, -plot_vx))
+                    angle = math.degrees(math.atan2(-vy, -vx))
                 arrow = pg.ArrowItem(
-                    angle=angle, tipAngle=35, baseAngle=15, headLen=16,
+                    angle=angle, tipAngle=35, baseAngle=15, headLen=10,
                     tailLen=0, pen=pg.mkPen('#b22222', width=1), brush='#e63946'
                 )
                 arrow.setPos(ax, ay)
