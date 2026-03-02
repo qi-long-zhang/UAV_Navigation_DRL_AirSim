@@ -20,13 +20,15 @@ from PyQt5.QtCore import pyqtSignal
 
 class AirsimGymEnv(gym.Env, QtCore.QThread):
     # pyqt signal for visualization
-    action_signal = pyqtSignal(int, np.ndarray)
-    state_signal = pyqtSignal(int, np.ndarray)
-    attitude_signal = pyqtSignal(int, np.ndarray, np.ndarray)
-    reward_signal = pyqtSignal(int, float, float)
+    # action_signal = pyqtSignal(int, np.ndarray)
+    # state_signal = pyqtSignal(int, np.ndarray)
+    # attitude_signal = pyqtSignal(int, np.ndarray, np.ndarray)
+    # reward_signal = pyqtSignal(int, float, float)
     pose_signal = pyqtSignal(np.ndarray, np.ndarray, np.ndarray, np.ndarray)
-    lgmd_signal = pyqtSignal(float, float, np.ndarray)
-    episode_signal = pyqtSignal(float, int, str, float)  # total_reward, episode_steps, done_reason, min_dist_to_obs
+    # lgmd_signal = pyqtSignal(float, float, np.ndarray)
+    episode_signal = pyqtSignal(
+        float, int, str, float
+    )  # total_reward, episode_steps, done_reason, min_dist_to_obs
 
     def __init__(self) -> None:
         super().__init__()
@@ -37,6 +39,13 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self.data_path = None
         self.lgmd = None
         self.goal_points = []
+        # Cached terminal-condition results for the current timestep.
+        # Set by is_done(); reused by info and compute_reward to avoid
+        # re-querying AirSim after the drone state may have changed.
+        self._term_is_success = False
+        self._term_is_crashed = False
+        self._term_is_not_in_workspace = False
+        self._term_is_timeout = False
 
     def set_config(self, cfg):
         """get config from .ini file"""
@@ -245,7 +254,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self.step_num = 0
         self.episode_steps = 0
         self.cumulated_episode_reward = 0
-        self.previous_distance_from_des_point = 0
+        self.previous_distance_to_goal = 0.0
+        self.current_distance_to_goal = 0.0
 
         # other settings
         self.max_episode_steps = cfg.getint("environment", "max_steps")
@@ -298,17 +308,15 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         self.update_dynamic_parameters()
 
-        if self.dynamic_model.navigation_3d:
-            self.dynamic_model.goal_distance = (
-                self.dynamic_model.get_distance_to_goal_3d()
-            )
-        else:
-            self.dynamic_model.goal_distance = (
-                self.dynamic_model.get_distance_to_goal_2d()
-            )
-        self.previous_distance_from_des_point = self.dynamic_model.goal_distance
+        self.dynamic_model.goal_distance = self.get_distance_to_goal()
+        self.previous_distance_to_goal = self.dynamic_model.goal_distance
+        self.current_distance_to_goal = self.dynamic_model.goal_distance
 
         self.trajectory_list = []
+        self._term_is_success = False
+        self._term_is_crashed = False
+        self._term_is_not_in_workspace = False
+        self._term_is_timeout = False
 
         obs = self.get_obs()
 
@@ -321,6 +329,9 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             self.dynamic_model.set_action(action, self.step_num)
         else:
             self.dynamic_model.set_action(action)
+
+        # Capture current distance to OLD goal for reward calculation
+        self.current_distance_to_goal = self.get_distance_to_goal()
 
         self.goal_reached_flag = False
 
@@ -336,10 +347,13 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 self.update_dynamic_parameters()
                 self.step_num = 0
 
-                if not self.is_done():  # 如果不是最后一个点导致结束
-                    self.previous_distance_from_des_point = (
-                        self.dynamic_model.get_distance_to_goal_3d()
-                    )
+                if self.dynamic_model.current_goal_index < len(
+                    self.dynamic_model.goal_points
+                ):  # 如果不是最后一个点导致结束
+                    # 更新为到新目标的距离，并同步更新分母 goal_distance
+                    self.current_distance_to_goal = self.get_distance_to_goal()
+                    self.previous_distance_to_goal = self.current_distance_to_goal
+                    self.dynamic_model.goal_distance = self.current_distance_to_goal
 
         position_ue4 = self.dynamic_model.get_position()
         self.trajectory_list.append(position_ue4)
@@ -353,25 +367,13 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         # get new obs
         obs = self.get_obs()
+
+        # Increment counters before is_done() so timeout fires at the correct step
+        self.step_num += 1
+        self.total_step += 1
+        self.episode_steps += 1
+
         done = self.is_done()
-        info = {
-            "is_success": self.is_in_desired_pose(),
-            "is_crash": self.is_crashed(),
-            "is_not_in_workspace": self.is_not_inside_workspace(),
-            "is_timeout": self.step_num >= self.max_episode_steps,
-            "episode_steps": self.episode_steps,
-            "episode_reward": self.cumulated_episode_reward,
-            "episode_distance": self.total_distance,
-        }
-        if done:
-            print(
-                f"is_success: {info['is_success']}, ",
-                # f"is_crash: {info['is_crash']}, ",
-                # f"is_not_in_workspace: {info['is_not_in_workspace']}, ",
-                # f"is_timeout: {info['is_timeout']}, ",
-                f"episode_steps: {info['episode_steps']}, "
-                f"episode_reward: {info['episode_reward']:.2f}",
-            )
 
         # ----------------compute reward---------------------------
         if self.dynamic_name == "SimpleFixedwing":
@@ -392,22 +394,39 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         else:
             reward = self.compute_reward(done, action)
 
+        # Advance distance reference for next step's reward calculation
+        self.previous_distance_to_goal = self.current_distance_to_goal
+
         self.cumulated_episode_reward += reward
 
+        info = {
+            "is_success": self._term_is_success,
+            "is_crash": self._term_is_crashed,
+            "is_not_in_workspace": self._term_is_not_in_workspace,
+            "is_timeout": self._term_is_timeout,
+            "episode_steps": self.episode_steps,
+            "episode_reward": self.cumulated_episode_reward,
+            "episode_distance": self.total_distance,
+        }
         if done:
-            if info['is_success']:
-                done_reason = 'reach'
-            elif info['is_crash']:
-                done_reason = 'crash'
-            elif info['is_not_in_workspace']:
-                done_reason = 'outside'
+            if info["is_success"]:
+                done_reason = "reach"
+            elif info["is_crash"]:
+                done_reason = "crash"
+            elif info["is_not_in_workspace"]:
+                done_reason = "outside"
             else:
-                done_reason = 'timeout'
+                done_reason = "timeout"
             self.episode_signal.emit(
                 self.cumulated_episode_reward,
-                int(self.step_num),
+                self.episode_steps,
                 done_reason,
                 float(self.min_distance_to_obstacles),
+            )
+            print(
+                f"done_reason: {done_reason}, "
+                f"episode_steps: {info['episode_steps']}, "
+                f"episode_reward: {info['episode_reward']:.2f}"
             )
 
         # ----------------print info---------------------------
@@ -463,10 +482,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                     q_value = min(q_1, q_2)[0]
 
                     self.visual_log_q_value(q_value, action, reward)
-
-        self.step_num += 1
-        self.total_step += 1
-        self.episode_steps += 1
 
         return obs, reward, done, info
 
@@ -665,13 +680,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         reward_outside = -10
 
         if not done:
-            distance_now = self.get_distance_to_goal_3d()
             reward_distance = (
-                (self.previous_distance_from_des_point - distance_now)
+                (self.previous_distance_to_goal - self.current_distance_to_goal)
                 / self.dynamic_model.goal_distance
                 * 500
             )  # normalized to 100 according to goal_distance
-            self.previous_distance_from_des_point = distance_now
 
             reward_obs = 0
             action_cost = 0
@@ -698,11 +711,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             reward = reward_distance - reward_obs - action_cost - yaw_error_cost
         else:
-            if self.is_in_desired_pose():
+            if self._term_is_success:
                 reward = reward_reach
-            if self.is_crashed():
+            if self._term_is_crashed:
                 reward = reward_crash
-            if self.is_not_inside_workspace():
+            if self._term_is_not_in_workspace:
                 reward = reward_outside
 
         return reward
@@ -722,13 +735,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         if not done:
             # 1 - goal reward
-            distance_now = self.get_distance_to_goal_3d()
             reward_distance = (
                 distance_reward_coef
-                * (self.previous_distance_from_des_point - distance_now)
+                * (self.previous_distance_to_goal - self.current_distance_to_goal)
                 / self.dynamic_model.goal_distance
             )  # normalized to 100 according to goal_distance
-            self.previous_distance_from_des_point = distance_now
 
             # 2 - Position punishment
             current_pose = self.dynamic_model.get_position()
@@ -790,11 +801,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 reward += reward_reach
 
         else:
-            if self.is_in_desired_pose():
+            if self._term_is_success:
                 reward = reward_reach
-            if self.is_crashed():
+            if self._term_is_crashed:
                 reward = reward_crash
-            if self.is_not_inside_workspace():
+            if self._term_is_not_in_workspace:
                 reward = reward_outside
 
         return reward
@@ -803,24 +814,20 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         reward = 0
         reward_reach = 10
         reward_crash = -20
-        reward_outside = -20
+        reward_outside = -10
 
         if self.env_name == "NH_center":
             distance_reward_coef = 500
-        elif self.env_name == "Custom":
-            distance_reward_coef = 100
         else:
             distance_reward_coef = 50
 
         if not done:
             # 1 - goal reward
-            distance_now = self.get_distance_to_goal_3d()
             reward_distance = (
                 distance_reward_coef
-                * (self.previous_distance_from_des_point - distance_now)
+                * (self.previous_distance_to_goal - self.current_distance_to_goal)
                 / self.dynamic_model.goal_distance
             )  # normalized to 100 according to goal_distance
-            self.previous_distance_from_des_point = distance_now
 
             # 2 - Position punishment
             current_pose = self.dynamic_model.get_position()
@@ -831,7 +838,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             x_g = goal_pose[0]
             y_g = goal_pose[1]
             z_g = goal_pose[2]
-
             punishment_xy = np.clip(self.getDis(x, y, 0, 0, x_g, y_g) / 10, 0, 1)
             punishment_z = 0.5 * np.clip((z - z_g) / 5, 0, 1)
 
@@ -871,11 +877,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 - 0.5 * yaw_error_cost
             )
         else:
-            if self.is_in_desired_pose():
+            if self._term_is_success:
                 reward = reward_reach
-            if self.is_crashed():
+            if self._term_is_crashed:
                 reward = reward_crash
-            if self.is_not_inside_workspace():
+            if self._term_is_not_in_workspace:
                 reward = reward_outside
 
         return reward
@@ -884,24 +890,20 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         reward = 0
         reward_reach = 10
         reward_crash = -20
-        reward_outside = -20
+        reward_outside = -10
 
         if self.env_name == "NH_center":
             distance_reward_coef = 500
-        elif self.env_name == "Custom":
-            distance_reward_coef = 100
         else:
             distance_reward_coef = 50
 
         if not done:
             # 1 - goal reward
-            distance_now = self.get_distance_to_goal_3d()
             reward_distance = (
                 distance_reward_coef
-                * (self.previous_distance_from_des_point - distance_now)
+                * (self.previous_distance_to_goal - self.current_distance_to_goal)
                 / self.dynamic_model.goal_distance
             )  # normalized to 100 according to goal_distance
-            self.previous_distance_from_des_point = distance_now
 
             # 2 - Position punishment
             current_pose = self.dynamic_model.get_position()
@@ -916,7 +918,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             # Use actual start position for calculating deviation from the straight line
             x_s = self.start_position[0]
             y_s = self.start_position[1]
-            z_s = self.start_position[2]
 
             # Relax the deviation penalty to allow detour around obstacles
             punishment_xy = np.clip(self.getDis(x, y, x_s, y_s, x_g, y_g) / 10, 0, 1)
@@ -927,7 +928,10 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             if self.min_distance_to_obstacles < 2.0:
                 punishment_obs = 1 - np.clip(
-                    (self.min_distance_to_obstacles - self.crash_distance) / (2.0 - self.crash_distance), 0, 1
+                    (self.min_distance_to_obstacles - self.crash_distance)
+                    / (2.0 - self.crash_distance),
+                    0,
+                    1,
                 )
             else:
                 punishment_obs = 0
@@ -959,11 +963,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 - 0.5 * yaw_error_cost
             )
         else:
-            if self.is_in_desired_pose():
+            if self._term_is_success:
                 reward = reward_reach
-            elif self.is_crashed():
+            elif self._term_is_crashed:
                 reward = reward_crash
-            elif self.is_not_inside_workspace():
+            elif self._term_is_not_in_workspace:
                 reward = reward_outside
 
         return reward
@@ -976,13 +980,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         if not done:
             # 1 - goal reward
-            distance_now = self.get_distance_to_goal_3d()
             reward_distance = (
                 300
-                * (self.previous_distance_from_des_point - distance_now)
+                * (self.previous_distance_to_goal - self.current_distance_to_goal)
                 / self.dynamic_model.goal_distance
             )  # normalized to 100 according to goal_distance
-            self.previous_distance_from_des_point = distance_now
 
             # 2 - Position punishment
             current_pose = self.dynamic_model.get_position()
@@ -1021,11 +1023,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             # print("r_dist: {:.2f} p_pose: {:.2f} p_obs: {:.2f} p_action: {:.2f}, p_yaw_e: {:.2f}".format(reward_distance, punishment_pose, punishment_obs, punishment_action, yaw_error_cost))
         else:
-            if self.is_in_desired_pose():
+            if self._term_is_success:
                 reward = reward_reach
-            if self.is_crashed():
+            if self._term_is_crashed:
                 reward = reward_crash
-            if self.is_not_inside_workspace():
+            if self._term_is_not_in_workspace:
                 reward = reward_outside
 
         return reward
@@ -1037,13 +1039,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         reward_outside = -10
 
         if not done:
-            distance_now = self.get_distance_to_goal_3d()
             reward_distance = (
-                (self.previous_distance_from_des_point - distance_now)
+                (self.previous_distance_to_goal - self.current_distance_to_goal)
                 / self.dynamic_model.goal_distance
                 * 100
             )  # normalized to 100 according to goal_distance
-            self.previous_distance_from_des_point = distance_now
 
             reward_obs = 0
             action_cost = 0
@@ -1068,11 +1068,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             reward = reward_distance - reward_obs - action_cost - yaw_error_cost
         else:
-            if self.is_in_desired_pose():
+            if self._term_is_success:
                 reward = reward_reach
-            if self.is_crashed():
+            if self._term_is_crashed:
                 reward = reward_crash
-            if self.is_not_inside_workspace():
+            if self._term_is_not_in_workspace:
                 reward = reward_outside
 
         return reward
@@ -1084,13 +1084,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         reward_outside = -10
 
         if not done:
-            distance_now = self.get_distance_to_goal_3d()
             reward_distance = (
-                (self.previous_distance_from_des_point - distance_now)
+                (self.previous_distance_to_goal - self.current_distance_to_goal)
                 / self.dynamic_model.goal_distance
                 * 300
             )  # normalized to 100 according to goal_distance
-            self.previous_distance_from_des_point = distance_now
 
             # 只有action cost和obs cost
             # 由于没有速度控制，所以前面那个也取消了
@@ -1116,13 +1114,13 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             reward = reward_distance - action_cost - yaw_error_cost
         else:
-            if self.is_in_desired_pose():
+            if self._term_is_success:
                 yaw_error_deg = self.dynamic_model.state_raw[1]
                 reward = reward_reach * (1 - abs(yaw_error_deg / 180))
                 # reward = reward_reach
-            if self.is_crashed():
+            if self._term_is_crashed:
                 reward = reward_crash
-            if self.is_not_inside_workspace():
+            if self._term_is_not_in_workspace:
                 reward = reward_outside
 
         return reward
@@ -1134,13 +1132,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         reward_outside = 0
 
         if not done:
-            distance_now = self.get_distance_to_goal_3d()
             reward_distance = (
-                (self.previous_distance_from_des_point - distance_now)
+                (self.previous_distance_to_goal - self.current_distance_to_goal)
                 / self.dynamic_model.goal_distance
                 * 5
             )
-            self.previous_distance_from_des_point = distance_now
 
             state_cost = 0
             action_cost = 0
@@ -1159,13 +1155,13 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 obs_cost = 0.5 * obs_cost**2
             reward = -(2 * relative_yaw_cost + 0.5 * action_cost)
         else:
-            if self.is_in_desired_pose():
+            if self._term_is_success:
                 # 到达之后根据yaw偏差对reward进行scale
                 reward = reward_reach * (1 - abs(self.dynamic_model.state_norm[1]))
                 # reward = reward_reach
-            if self.is_crashed():
+            if self._term_is_crashed:
                 reward = reward_crash
-            if self.is_not_inside_workspace():
+            if self._term_is_not_in_workspace:
                 reward = reward_outside
 
         return reward
@@ -1179,13 +1175,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         step_cost = 0.01  # 10 for max 1000 steps
 
         if not done:
-            distance_now = self.get_distance_to_goal_3d()
             reward_distance = (
-                (self.previous_distance_from_des_point - distance_now)
+                (self.previous_distance_to_goal - self.current_distance_to_goal)
                 / self.dynamic_model.goal_distance
                 * 10
             )  # normalized to 100 according to goal_distance
-            self.previous_distance_from_des_point = distance_now
 
             reward_obs = 0
             action_cost = 0
@@ -1204,11 +1198,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             reward = reward_distance - reward_obs - action_cost - yaw_error_cost
         else:
-            if self.is_in_desired_pose():
+            if self._term_is_success:
                 reward = reward_reach
-            if self.is_crashed():
+            if self._term_is_crashed:
                 reward = reward_crash
-            if self.is_not_inside_workspace():
+            if self._term_is_not_in_workspace:
                 reward = reward_outside
 
         return reward
@@ -1248,12 +1242,12 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             # print('r: {:.2f} y_r: {:.2f} y_e: {:.2f} z_r: {:.2f} z_e: {:.2f}'.format(reward, yaw_speed_cost, yaw_error_cost, v_z_cost, z_err_cost))
         else:
-            if self.is_in_desired_pose():
+            if self._term_is_success:
                 yaw_error_clip = min(max(-30, self.dynamic_model.state_raw[2]), 30) / 30
                 reward = reward_reach * (1 - yaw_error_clip**2)
-            if self.is_crashed():
+            if self._term_is_crashed:
                 reward = reward_crash
-            if self.is_not_inside_workspace():
+            if self._term_is_not_in_workspace:
                 reward = reward_outside
 
         return reward
@@ -1276,13 +1270,22 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         else:
             has_reached_des_pos = self.is_in_desired_pose()
 
+        is_timeout = self.step_num >= self.max_episode_steps
+
         # We see if we are outside the Learning Space
         episode_done = (
             is_not_inside_workspace_now
             or has_reached_des_pos
             or too_close_to_obstable
-            or self.step_num >= self.max_episode_steps
+            or is_timeout
         )
+
+        # Cache all sub-conditions so info and compute_reward can reuse them
+        # without re-querying AirSim (drone state may change after this call).
+        self._term_is_success = has_reached_des_pos
+        self._term_is_crashed = too_close_to_obstable
+        self._term_is_not_in_workspace = is_not_inside_workspace_now
+        self._term_is_timeout = is_timeout
 
         return episode_done
 
@@ -1306,33 +1309,23 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         return is_not_inside
 
     def is_in_desired_pose(self):
-        in_desired_pose = False
-        if self.get_distance_to_goal_3d() < self.accept_radius:
-            in_desired_pose = True
-
-        return in_desired_pose
+        return self.current_distance_to_goal < self.accept_radius
 
     def is_crashed(self):
-        is_crashed = False
         collision_info = self.client.simGetCollisionInfo()
-        if (
+        return (
             collision_info.has_collided
             or self.min_distance_to_obstacles < self.crash_distance
-        ):
-            is_crashed = True
-
-        return is_crashed
+        )
 
     # ! ----------- useful functions-------------------------------------------
-    def get_distance_to_goal_3d(self):
-        # 直接调用 dynamic_model 里的方法，避免代码重复
-        if hasattr(self.dynamic_model, "get_distance_to_goal_3d"):
-            return self.dynamic_model.get_distance_to_goal_3d()
+    def get_distance_to_goal(self):
+        if self.dynamic_model.navigation_3d:
+            if hasattr(self.dynamic_model, "get_distance_to_goal_3d"):
+                return self.dynamic_model.get_distance_to_goal_3d()
         else:
-            # 以此作为备用逻辑（防止其他的 dynamic model 没有实现这个方法）
-            current_pose = self.dynamic_model.get_position()
-            goal_pose = self.dynamic_model.goal_position
-            return math.dist(current_pose, goal_pose)
+            if hasattr(self.dynamic_model, "get_distance_to_goal_2d"):
+                return self.dynamic_model.get_distance_to_goal_2d()
 
     def getDis(self, pointX, pointY, lineX1, lineY1, lineX2, lineY2):
         """
@@ -1397,16 +1390,16 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         # state in  3: d_xy, yaw_error, roll
         state_output = np.array([state[0], 0, state[1], 10, 0, state[2]])
 
-        self.action_signal.emit(step, action_plot)
-        self.state_signal.emit(step, state_output)
+        # self.action_signal.emit(step, action_plot)
+        # self.state_signal.emit(step, state_output)
 
         # other values
-        self.attitude_signal.emit(
-            step,
-            np.asarray(self.dynamic_model.get_attitude()),
-            np.asarray(self.dynamic_model.get_attitude_cmd()),
-        )
-        self.reward_signal.emit(step, reward, self.cumulated_episode_reward)
+        # self.attitude_signal.emit(
+        #     step,
+        #     np.asarray(self.dynamic_model.get_attitude()),
+        #     np.asarray(self.dynamic_model.get_attitude_cmd()),
+        # )
+        # self.reward_signal.emit(step, reward, self.cumulated_episode_reward)
         self.pose_signal.emit(
             np.asarray(self.dynamic_model.goal_position),
             np.asarray(self.dynamic_model.start_position),
@@ -1415,7 +1408,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         )
 
         # lgmd_signal = pyqtSignal(float, float, np.ndarray)  min_dist, lgmd_out, lgmd_split
-        self.lgmd_signal.emit(self.min_distance_to_obstacles, 0, self.feature_all[:-1])
+        # self.lgmd_signal.emit(self.min_distance_to_obstacles, 0, self.feature_all[:-1])
 
     def set_pyqt_signal_multirotor(self, action, reward):
         step = int(self.total_step)
@@ -1429,16 +1422,16 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             action_output = np.array([action[0], 0, action[1]])
             state_output = np.array([state[0], 0, state[2], state[3], 0, state[5]])
 
-        self.action_signal.emit(step, action_output)
-        self.state_signal.emit(step, state_output)
+        # self.action_signal.emit(step, action_output)
+        # self.state_signal.emit(step, state_output)
 
         # other values
-        self.attitude_signal.emit(
-            step,
-            np.asarray(self.dynamic_model.get_attitude()),
-            np.asarray(self.dynamic_model.get_attitude_cmd()),
-        )
-        self.reward_signal.emit(step, reward, self.cumulated_episode_reward)
+        # self.attitude_signal.emit(
+        #     step,
+        #     np.asarray(self.dynamic_model.get_attitude()),
+        #     np.asarray(self.dynamic_model.get_attitude_cmd()),
+        # )
+        # self.reward_signal.emit(step, reward, self.cumulated_episode_reward)
         self.pose_signal.emit(
             np.asarray(self.dynamic_model.goal_position),
             np.asarray(self.dynamic_model.start_position),
