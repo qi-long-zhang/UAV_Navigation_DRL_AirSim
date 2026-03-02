@@ -261,6 +261,9 @@ class MultirotorDynamicsSimple():
         position = self.client.simGetVehiclePose().position
         return [position.x_val, position.y_val, -position.z_val]
 
+    def get_velocity_vector(self):
+        return [self.v_xy * math.cos(self.yaw), self.v_xy * math.sin(self.yaw)]
+
     def get_attitude_cmd(self):
         return [0.0, 0.0, 0.0]
 

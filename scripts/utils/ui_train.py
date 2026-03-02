@@ -472,6 +472,13 @@ class TrainingUi(QWidget):
             self.plot_xy_start = self.traj_pw_xy.plot(symbol='o', symbolBrush='#28a745', symbolPen='w', symbolSize=12)
             # 3. 终点 (红色旗帜/星标)
             self.plot_xy_goal = self.traj_pw_xy.plot(symbol='star', symbolBrush='#dc3545', symbolPen='w', symbolSize=18)
+            # 4. 航向箭头 (当前前进方向)
+            self.heading_arrow_xy = pg.ArrowItem(
+                angle=0, tipAngle=35, baseAngle=15, headLen=16,
+                tailLen=0, pen=pg.mkPen('#b22222', width=1), brush='#e63946'
+            )
+            self.heading_arrow_xy.setVisible(False)
+            self.traj_pw_xy.addItem(self.heading_arrow_xy)
 
             # =========================================================
             #  2. Z Axis Plot (Altitude Profile)
@@ -589,7 +596,7 @@ class TrainingUi(QWidget):
         traj_plot_groupbox.setLayout(layout)
         return traj_plot_groupbox
 
-    def traj_plot_cb(self, goal, start, current_pose, trajectory_list):
+    def traj_plot_cb(self, goal, start, current_pose, trajectory_list, velocity):
         """
         Plot trajectory
         """
@@ -609,6 +616,14 @@ class TrainingUi(QWidget):
                 
                 self.plot_xy_trace.setData(x_data, y_data)
                 
+                # 航向箭头：根据实际速度矢量绘制
+                vx, vy = float(velocity[0]), float(velocity[1])
+                if vx**2 + vy**2 > 1e-4:
+                    angle = math.degrees(math.atan2(-vy, -vx))
+                    self.heading_arrow_xy.setPos(traj_arr[-1, 0], traj_arr[-1, 1])
+                    self.heading_arrow_xy.setStyle(angle=angle)
+                    self.heading_arrow_xy.setVisible(True)
+
                 # 仅绘制单个点作为 Start/Goal
                 self.plot_xy_start.setData([start[0]], [start[1]])
                 self.plot_xy_goal.setData([goal[0]], [goal[1]])
@@ -679,6 +694,24 @@ class TrainingUi(QWidget):
                 
             self.traj_pw.plot(
                 traj_x, traj_y, pen=self.pen_red)
+
+            # 航向箭头：根据实际速度矢量绘制
+            vx, vy = float(velocity[0]), float(velocity[1])
+            if vx**2 + vy**2 > 1e-4:
+                if is_custom:
+                    # Custom 环境 x/y 轴互换 (plot_x=world_y, plot_y=world_x)
+                    plot_vx, plot_vy = vy, vx
+                    ax, ay = float(trajectory_list[-1, 1]), float(trajectory_list[-1, 0])
+                else:
+                    plot_vx, plot_vy = vx, vy
+                    ax, ay = float(trajectory_list[-1, 0]), float(trajectory_list[-1, 1])
+                angle = math.degrees(math.atan2(-plot_vy, -plot_vx))
+                arrow = pg.ArrowItem(
+                    angle=angle, tipAngle=35, baseAngle=15, headLen=16,
+                    tailLen=0, pen=pg.mkPen('#b22222', width=1), brush='#e63946'
+                )
+                arrow.setPos(ax, ay)
+                self.traj_pw.addItem(arrow)
 
 
 def main():

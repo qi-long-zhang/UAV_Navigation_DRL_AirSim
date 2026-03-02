@@ -315,6 +315,11 @@ class MultirotorDynamicsAirsim():
 
         return [velocity_xy, -velocity_z, yaw_rate]
 
+    def get_velocity_vector(self):
+        states = self.client.getMultirotorState()
+        lv = states.kinematics_estimated.linear_velocity
+        return [lv.x_val, lv.y_val]
+
     def get_attitude(self):
         self.state_current_attitude = self.client.simGetVehiclePose().orientation
         return airsim.to_eularian_angles(self.state_current_attitude)

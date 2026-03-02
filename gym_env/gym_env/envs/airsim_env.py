@@ -24,7 +24,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
     # state_signal = pyqtSignal(int, np.ndarray)
     # attitude_signal = pyqtSignal(int, np.ndarray, np.ndarray)
     # reward_signal = pyqtSignal(int, float, float)
-    pose_signal = pyqtSignal(np.ndarray, np.ndarray, np.ndarray, np.ndarray)
+    pose_signal = pyqtSignal(np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray)
     # lgmd_signal = pyqtSignal(float, float, np.ndarray)
     episode_signal = pyqtSignal(
         float, int, str, float
@@ -302,7 +302,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self.episode_steps = 0
         self.cumulated_episode_reward = 0
         self.total_distance = 0.0  # Initialize total distance
-        self.previous_position_metric = (
+        self.previous_position_metric = np.array(
             self.dynamic_model.get_position()
         )  # Initialize previous position
 
@@ -330,9 +330,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         else:
             self.dynamic_model.set_action(action)
 
-        # Capture current distance to OLD goal for reward calculation
-        self.current_distance_to_goal = self.get_distance_to_goal()
-
         self.goal_reached_flag = False
 
         if self.env_name in {"Mountains", "Mountains_Easy"}:
@@ -355,18 +352,18 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                     self.previous_distance_to_goal = self.current_distance_to_goal
                     self.dynamic_model.goal_distance = self.current_distance_to_goal
 
-        position_ue4 = self.dynamic_model.get_position()
+        position_ue4 = np.array(self.dynamic_model.get_position())
         self.trajectory_list.append(position_ue4)
 
         # Calculate distance traveled
-        distance_increment = np.linalg.norm(
-            np.array(position_ue4) - np.array(self.previous_position_metric)
-        )
-        self.total_distance += distance_increment
+        self.total_distance += np.linalg.norm(position_ue4 - self.previous_position_metric)
         self.previous_position_metric = position_ue4
 
         # get new obs
         obs = self.get_obs()
+
+        # Read distance after obs so both reflect the same drone state (s_{t+1})
+        self.current_distance_to_goal = self.get_distance_to_goal()
 
         # Increment counters before is_done() so timeout fires at the correct step
         self.step_num += 1
@@ -1405,6 +1402,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             np.asarray(self.dynamic_model.start_position),
             np.asarray(self.dynamic_model.get_position()),
             np.asarray(self.trajectory_list),
+            np.asarray(self.dynamic_model.get_velocity_vector()),
         )
 
         # lgmd_signal = pyqtSignal(float, float, np.ndarray)  min_dist, lgmd_out, lgmd_split
@@ -1437,6 +1435,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             np.asarray(self.dynamic_model.start_position),
             np.asarray(self.dynamic_model.get_position()),
             np.asarray(self.trajectory_list),
+            np.asarray(self.dynamic_model.get_velocity_vector()),
         )
 
     def visual_log_q_value(self, q_value, action, reward):

@@ -219,6 +219,9 @@ class FixedwingDynamicsSimple():
     def get_position(self):
         return [self.x, self.y, self.z]
 
+    def get_velocity_vector(self):
+        return [self.v_xy * math.cos(self.yaw), self.v_xy * math.sin(self.yaw)]
+
     def get_attitude(self):
         return [self.pitch, self.roll, self.yaw]
 
