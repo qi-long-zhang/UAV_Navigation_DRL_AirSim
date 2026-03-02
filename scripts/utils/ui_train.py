@@ -40,7 +40,7 @@ class TrainingUi(QWidget):
     def init_ui(self):
         """ init UI: trajectory + last episode info only """
         self.setWindowTitle("Training UI")
-        self.resize(1100, 750)
+        self.resize(1300, 750)
 
         pg.setConfigOptions(leftButtonPan=False)
         pg.setConfigOption('background', 'w')
@@ -383,7 +383,7 @@ class TrainingUi(QWidget):
         from PyQt5.QtCore import Qt
 
         gb = QGroupBox('Last Episode Info')
-        gb.setFixedWidth(300)
+        gb.setFixedWidth(420)
         gb.setStyleSheet("QGroupBox { font-size: 13pt; font-weight: bold; }")
         form = QFormLayout()
         form.setVerticalSpacing(16)
