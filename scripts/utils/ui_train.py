@@ -700,9 +700,9 @@ class TrainingUi(QWidget):
             if vx**2 + vy**2 > 1e-4:
                 if is_custom:
                     # Custom env: plot_x=world_y, plot_y=world_x, y-up view
-                    # screen_x=vy_world, screen_y=-vx_world → angle=atan2(-vx, -vy)
+                    # vx_screen=vy_world, vy_screen=vx_world → angle=atan2(vx, -vy)
                     ax, ay = float(trajectory_list[-1, 1]), float(trajectory_list[-1, 0])
-                    angle = math.degrees(math.atan2(-vx, -vy))
+                    angle = math.degrees(math.atan2(vx, -vy))
                 else:
                     # Standard envs: invertY active → vy_screen = -vy_data
                     ax, ay = float(trajectory_list[-1, 0]), float(trajectory_list[-1, 1])
