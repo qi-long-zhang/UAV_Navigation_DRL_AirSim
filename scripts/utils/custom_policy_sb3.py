@@ -535,15 +535,16 @@ class CNN_Spatial(BaseFeaturesExtractor):
     
     Designed specifically for 80x100 input to output a 5x5 feature grid.
     Input:  [Batch, 1, 80, 100] (Depth Image)
-    Output: [Batch, 200 + state_dim] (Flattened 8x5x5 features + state)
+    Output: [Batch, feature_num_cnn + state_dim]
     """
 
     def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256, state_feature_dim=4):
-        # features_dim is a placeholder; we calculate the real dim dynamically
+        # features_dim is the total dimension (CNN latent + state)
         super(CNN_Spatial, self).__init__(observation_space, features_dim)
 
         assert state_feature_dim > 0
         self.feature_num_state = state_feature_dim
+        self.feature_num_cnn = features_dim - state_feature_dim
         self.feature_all = None
 
         # 1. Learnable Layer: Extract features but keep size roughly same
@@ -560,34 +561,40 @@ class CNN_Spatial(BaseFeaturesExtractor):
         # 100 / 20 = 5
         self.pool = nn.MaxPool2d(kernel_size=(16, 20))
         
-        # 3. Flatten without Linear projection (Direct Spatial Mapping)
+        # 3. Flatten
         self.flatten = nn.Flatten()
 
-        # Compute shape by doing one forward pass to ensure compatibility
-        # We manually normalize by 255.0 here to mimic SB3's preprocessing during init
+        # Compute shape of flattened spatial features
         with th.no_grad():
             sample_input = th.as_tensor(observation_space.sample()[None][:, 0:1, :, :]).float()
-            n_flatten = self.flatten(self.pool(self.conv(sample_input))).shape[1]
+            n_flatten = self.flatten(self.pool(self.conv(sample_input))).shape[1] # Should be 200
         
-        # Update the features_dim to match actual output + state features
-        self._features_dim = n_flatten + state_feature_dim
+        # 4. Compression Layer: Reduce 200 features to feature_num_cnn (e.g., 32)
+        # This prevents the vision features from "drowning out" the 3-4 state features
+        self.linear = nn.Sequential(
+            nn.Linear(n_flatten, self.feature_num_cnn),
+            nn.ReLU()
+        )
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
         # Note: observations are already normalized to [0, 1] by SB3
         depth_img = observations[:, 0:1, :, :]
+        
+        # Optional: Normalize to [-1, 1] for better gradient flow
+        depth_img_norm = (depth_img - 0.5) * 2
 
         # 1. Extract features (Filtering)
-        x = self.conv(depth_img)
+        x = self.conv(depth_img_norm)
         
-        # 2. Downsample to coarse grid (8 channels * 5 * 5)
+        # 2. Downsample to coarse grid (8 channels * 5 * 5 = 200)
         x = self.pool(x)
         
-        # 3. Flatten (Spatial features are preserved in sequence)
-        cnn_feature = self.flatten(x)  # Shape: [Batch, 200]
+        # 3. Flatten and Compress
+        cnn_feature = self.linear(self.flatten(x))  # Shape: [Batch, feature_num_cnn]
 
         state_feature = observations[:, 1, 0, 0:self.feature_num_state]
         
-        # Concatenate
+        # Concatenate: Results in a balanced feature vector
         out = th.cat((cnn_feature, state_feature), dim=1)
         self.feature_all = out
 
