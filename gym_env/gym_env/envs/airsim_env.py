@@ -327,9 +327,10 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             unit_perp_y = vec_x / dist_xy
 
             while True:
-                # Alpha: progress along the line (0.0 to 1.0)
+                # Alpha: progress along the line (0.0 to 0.9 to keep at least
+                # 10% of mission distance from goal, preventing trivial episodes)
                 # Beta: perpendicular offset (-7.5m to +7.5m)
-                alpha = np.random.uniform(0.0, 1.0)
+                alpha = np.random.uniform(0.0, 0.9)
                 beta = np.random.uniform(-7.5, 7.5)
 
                 rand_x = start_pos[0] + alpha * vec_x + beta * unit_perp_x
