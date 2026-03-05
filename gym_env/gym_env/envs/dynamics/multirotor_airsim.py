@@ -81,11 +81,10 @@ class MultirotorDynamicsAirsim():
             self.current_goal_index = 0
             self.update_current_goal()
         elif self.use_fixed_goal:
-            # Keep fixed single-goal position and refresh goal_distance.
-            if self.navigation_3d:
-                self.goal_distance = self.get_distance_to_goal_3d()
-            else:
-                self.goal_distance = self.get_distance_to_goal_2d()
+            # goal_position is fixed; goal_distance is set once from mission
+            # start → goal and must not be refreshed here, as it serves as a
+            # fixed normalization reference across all episodes.
+            pass
         else:
             # 否则使用旧的单目标随机生成逻辑
             self.update_goal_pose()
