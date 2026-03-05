@@ -293,9 +293,61 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         except NoOptionError:
             self.reward_type = None
 
+        # learning starts settings
+        self.learning_starts = cfg.getint("DRL", "learning_starts")
+
+        # store mission start parameters
+        self.mission_start_position = list(self.dynamic_model.start_position)
+        self.mission_start_random_angle = self.dynamic_model.start_random_angle
+        self.mission_start_yaw_offset = self.dynamic_model.start_yaw_offset
+
     def reset(self):
-        # reset state
-        self.dynamic_model.reset()
+        # implement random start within learning starts
+        if self.total_step < self.learning_starts:
+            # Random Start within mission-to-goal corridor (10m offset)
+            goal_pos = self.dynamic_model.goal_position
+            start_pos = self.mission_start_position
+
+            # Calculate vector and distance in XY plane
+            vec_x = goal_pos[0] - start_pos[0]
+            vec_y = goal_pos[1] - start_pos[1]
+            dist_xy = math.sqrt(vec_x**2 + vec_y**2)
+
+            # Perpendicular unit vector for width offset
+            unit_perp_x = -vec_y / dist_xy
+            unit_perp_y = vec_x / dist_xy
+
+            while True:
+                # Alpha: progress along the line (0.0 to 1.0)
+                # Beta: perpendicular offset (-7.5m to +7.5m)
+                alpha = np.random.uniform(0.0, 1.0)
+                beta = np.random.uniform(-7.5, 7.5)
+
+                rand_x = start_pos[0] + alpha * vec_x + beta * unit_perp_x
+                rand_y = start_pos[1] + alpha * vec_y + beta * unit_perp_y
+                rand_z = 5.0  # Fixed height at 5 meters
+                self.dynamic_model.set_start(
+                    [rand_x, rand_y, rand_z],
+                    random_angle=math.pi * 2,
+                    yaw_offset=0,
+                )
+                self.dynamic_model.reset()
+
+                # Check safety: min distance to obs >= 2.0m and no collision
+                if (
+                    self.get_depth_image().min() >= 2.0
+                    and not self.client.simGetCollisionInfo().has_collided
+                ):
+                    break
+                
+        else:
+            # Outside learning starts, always use mission start
+            self.dynamic_model.set_start(
+                self.mission_start_position,
+                random_angle=self.mission_start_random_angle,
+                yaw_offset=self.mission_start_yaw_offset,
+            )
+            self.dynamic_model.reset()
 
         self.episode_num += 1
         self.step_num = 0
