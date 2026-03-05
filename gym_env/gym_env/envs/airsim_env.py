@@ -326,12 +326,26 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 rand_x = start_pos[0] + alpha * vec_x + beta * unit_perp_x
                 rand_y = start_pos[1] + alpha * vec_y + beta * unit_perp_y
                 rand_z = 5.0  # Fixed height at 5 meters
+
+                # Check if the sampled point is within workspace boundaries
+                if not (
+                        self.work_space_x[0] < rand_x < self.work_space_x[1]
+                        and self.work_space_y[0] < rand_y < self.work_space_y[1]
+                    ):
+                        continue  # Out of workspace, try again
+
                 self.dynamic_model.set_start(
                     [rand_x, rand_y, rand_z],
                     random_angle=math.pi * 2,
                     yaw_offset=0,
                 )
                 self.dynamic_model.reset()
+
+                # Force synchronization: advance physics for one frame (0.01s)
+                # to ensure collision info and depth image are updated
+                self.client.simPause(False)
+                self.client.simContinueForTime(0.01)
+                self.client.simPause(True)
 
                 # Check safety: min distance to obs >= 2.0m and no collision
                 if (
