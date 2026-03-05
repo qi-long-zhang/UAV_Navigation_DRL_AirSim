@@ -367,10 +367,13 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self.step_num = 0
         self.episode_steps = 0
         self.cumulated_episode_reward = 0
-        self.total_distance = 0.0  # Initialize total distance
-        self.previous_position_metric = np.array(
-            self.dynamic_model.get_position()
-        )  # Initialize previous position
+        self.total_distance = 0.0
+
+        # Cache actual start position once; used by reward deviation penalty and
+        # distance tracking.
+        _start_pos = np.array(self.dynamic_model.get_position())
+        self.start_position = list(_start_pos)
+        self.previous_position_metric = _start_pos
 
         self.update_dynamic_parameters()
 
