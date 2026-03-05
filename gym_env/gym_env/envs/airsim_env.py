@@ -301,6 +301,15 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self.mission_start_random_angle = self.dynamic_model.start_random_angle
         self.mission_start_yaw_offset = self.dynamic_model.start_yaw_offset
 
+        # Compute fixed mission distance (start → goal) once.
+        # Used as normalization denominator in both state and reward so the
+        # scale stays consistent regardless of random start positions.
+        ms = self.mission_start_position
+        gp = self.dynamic_model.goal_position
+        self.dynamic_model.goal_distance = math.sqrt(
+            (ms[0] - gp[0]) ** 2 + (ms[1] - gp[1]) ** 2 + (ms[2] - gp[2]) ** 2
+        )
+
     def reset(self):
         # implement random start within learning starts
         if self.total_step < self.learning_starts:
@@ -377,9 +386,9 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         self.update_dynamic_parameters()
 
-        self.dynamic_model.goal_distance = self.get_distance_to_goal()
-        self.previous_distance_to_goal = self.dynamic_model.goal_distance
-        self.current_distance_to_goal = self.dynamic_model.goal_distance
+        actual_dist = self.get_distance_to_goal()
+        self.previous_distance_to_goal = actual_dist
+        self.current_distance_to_goal = actual_dist
 
         self.trajectory_list = []
         self._term_is_success = False
