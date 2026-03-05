@@ -995,8 +995,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             x_s = self.start_position[0]
             y_s = self.start_position[1]
 
-            # Penalty saturates at 5m deviation from start-to-goal line
-            punishment_xy = np.clip(self.getDis(x, y, x_s, y_s, x_g, y_g) / 5, 0, 1)
+            # Penalty saturates at 10m deviation from start-to-goal line
+            punishment_xy = np.clip(self.getDis(x, y, x_s, y_s, x_g, y_g) / 10, 0, 1)
             # Maintain Z alignment punishment
             punishment_z = 0.5 * np.clip((z - z_g) / 5, 0, 1)
 
