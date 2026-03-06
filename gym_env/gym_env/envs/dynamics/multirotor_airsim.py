@@ -59,17 +59,17 @@ class MultirotorDynamicsAirsim():
         
         if self.navigation_3d:
             if self.using_velocity_state:
-                self.state_feature_length = 6
+                self.state_feature_length = 7
             else:
-                self.state_feature_length = 3
+                self.state_feature_length = 4
             self.action_space = spaces.Box(low=np.array([self.v_xy_min, -self.v_z_max, -self.yaw_rate_max_rad], dtype=np.float32),
                                            high=np.array([self.v_xy_max, self.v_z_max, self.yaw_rate_max_rad], dtype=np.float32),
                                            dtype=np.float32)
         else:
             if self.using_velocity_state:
-                self.state_feature_length = 4
+                self.state_feature_length = 5
             else:
-                self.state_feature_length = 2
+                self.state_feature_length = 3
             self.action_space = spaces.Box(low=np.array([self.v_xy_min, -self.yaw_rate_max_rad], dtype=np.float32),
                                            high=np.array([self.v_xy_max, self.yaw_rate_max_rad], dtype=np.float32),
                                            dtype=np.float32)
@@ -246,7 +246,8 @@ class MultirotorDynamicsAirsim():
         vertical_distance_norm = (relative_pose_z / self.max_vertical_difference / 2 + 0.5) * 255
 
         distance_norm = distance / self.goal_distance * 255
-        relative_yaw_norm = (relative_yaw / math.pi / 2 + 0.5) * 255
+        relative_yaw_sin_norm = (math.sin(relative_yaw) / 2 + 0.5) * 255
+        relative_yaw_cos_norm = (math.cos(relative_yaw) / 2 + 0.5) * 255
 
         # current speed and angular speed
         velocity = self.get_velocity()
@@ -255,21 +256,21 @@ class MultirotorDynamicsAirsim():
         linear_velocity_z = velocity[1]
         linear_velocity_z_norm = (linear_velocity_z / self.v_z_max / 2 + 0.5) * 255
         angular_velocity_norm = (velocity[2] / self.yaw_rate_max_rad / 2 + 0.5) * 255
-        # state: distance_h, distance_v, relative yaw, velocity_x, velocity_z, velocity_yaw
+        # state: distance_h, distance_v, sin_yaw, cos_yaw, velocity_x, velocity_z, velocity_yaw
         self.state_raw = np.array([distance, relative_pose_z,  math.degrees(
             relative_yaw), linear_velocity_xy, linear_velocity_z,  math.degrees(velocity[2])])
-        state_norm = np.array([distance_norm, vertical_distance_norm, relative_yaw_norm,
+        state_norm = np.array([distance_norm, vertical_distance_norm, relative_yaw_sin_norm, relative_yaw_cos_norm,
                                linear_velocity_norm, linear_velocity_z_norm, angular_velocity_norm])
         state_norm = np.clip(state_norm, 0, 255)
         
         if self.navigation_3d:
             if self.using_velocity_state == False:
-                state_norm = state_norm[:3]
+                state_norm = state_norm[:4]
         else:
             state_norm = np.array(
-                [state_norm[0], state_norm[2], state_norm[3], state_norm[5]])
+                [state_norm[0], state_norm[2], state_norm[3], state_norm[4], state_norm[6]])
             if self.using_velocity_state == False:
-                state_norm = state_norm[:2]
+                state_norm = state_norm[:3]
 
         self.state_norm = state_norm
         
