@@ -39,6 +39,9 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self.data_path = None
         self.lgmd = None
         self.goal_points = []
+        # Initialize to a safe large value so is_crashed() and reward functions
+        # never raise AttributeError before the first observation is collected.
+        self.min_distance_to_obstacles = float('inf')
         # Cached terminal-condition results for the current timestep.
         # Set by is_done(); reused by info and compute_reward to avoid
         # re-querying AirSim after the drone state may have changed.
@@ -611,16 +614,18 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         # 2. State channel (Ensure 0-255)
         state_feature_array = np.zeros((self.screen_height, self.screen_width), dtype=np.uint8)
         state_feature = self.dynamic_model._get_state_feature()
-        state_feature_array[0, 0 : self.state_feature_length] = (state_feature * 255.0).astype(np.uint8)
+        state_feature_array[0, 0 : self.state_feature_length] = state_feature.astype(np.uint8)
         
-        # 3. LiDAR channel (Ensure 0-255)
+        # 3. LiDAR channel (Ensure 0-255) - stored row-by-row (screen_width cols per row)
+        # 512 bins / 100 cols = 6 rows, fully preserving all 360° scan data
         lidar_feature_array = np.zeros((self.screen_height, self.screen_width), dtype=np.uint8)
-        lidar_feature = self.get_lidar_obs() # This updates self.min_distance_to_obstacles
-        
-        # Guard against screen_width < 512 to prevent index crash
+        lidar_feature = self.get_lidar_obs()  # This updates self.min_distance_to_obstacles
         lidar_data_uint8 = (lidar_feature * 255.0).astype(np.uint8)
-        max_to_fill = min(self.screen_width, self.lidar_feature_length)
-        lidar_feature_array[0, 0 : max_to_fill] = lidar_data_uint8[:max_to_fill]
+        num_lidar_rows = math.ceil(self.lidar_feature_length / self.screen_width)
+        for i in range(num_lidar_rows):
+            row_start = i * self.screen_width
+            row_end = min(row_start + self.screen_width, self.lidar_feature_length)
+            lidar_feature_array[i, 0:(row_end - row_start)] = lidar_data_uint8[row_start:row_end]
 
         # Pack into (H, W, 3)
         image_all = np.stack([image_uint8, state_feature_array, lidar_feature_array], axis=-1)
@@ -633,19 +638,22 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         lidar_data = self.client.getLidarData(lidar_name="LidarCustom", vehicle_name="Drone1")
         
         # Default to max range (20m) normalized to 1.0 (far)
-        # Note: In depth images, 0 is far, 255 is near. 
+        # Note: In depth images, 0 is far, 255 is near.
         # For consistency with your depth features, let's make 0 = 20m, 1 = 0m
         max_range = 20.0
-        lidar_range_128 = np.zeros(self.lidar_feature_length) # 0 means far
+        lidar_range_512 = np.zeros(self.lidar_feature_length) # 0 means far
         
+        # Default min_distance to max_range to avoid AttributeError if point_cloud is empty
+        self.min_distance_to_obstacles = max_range
+
         if len(lidar_data.point_cloud) >= 3:
             points = np.array(lidar_data.point_cloud, dtype=np.float32).reshape(-1, 3)
             # x is forward, y is right, z is down
             dist = np.sqrt(points[:, 0]**2 + points[:, 1]**2)
             # angle in radians, 0 is forward, positive is clockwise (right)
-            angle = np.arctan2(points[:, 1], points[:, 0]) 
+            angle = np.arctan2(points[:, 1], points[:, 0])
 
-            # Full 360° coverage: map -π ~ π to 128 bins
+            # Full 360° coverage: map -π ~ π to 512 bins
             fov_rad   = 2 * math.pi
             angle_min = -math.pi
 
@@ -654,19 +662,17 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 # We want to keep the MINIMUM distance in each bin (closest obstacle)
                 # Initialize with max_range
                 temp_bins = np.full(self.lidar_feature_length, max_range)
-                for i in range(len(dist)):
-                    idx = indices[i]
-                    if dist[i] < temp_bins[idx]:
-                        temp_bins[idx] = dist[i]
                 
+                # Fast vectorized operation to replace the slow python loop
+                np.minimum.at(temp_bins, indices, dist)
+
                 # Normalize: 0 is far (max_range), 1 is near (0m)
-                lidar_range_128 = 1.0 - (np.clip(temp_bins, 0, max_range) / max_range)
+                lidar_range_512 = 1.0 - (np.clip(temp_bins, 0, max_range) / max_range)
 
                 # Update min obstacle distance (metres) from LiDAR
                 self.min_distance_to_obstacles = float(temp_bins.min())
 
-        return lidar_range_128
-
+        return lidar_range_512
     def get_obs_image(self):
         # Normal mode: get depth image then transfer to matrix with state
         # 1. get current depth image and transfer to 0-255  0-20m 255-0m
@@ -692,7 +698,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         image_with_state = image_with_state.swapaxes(0, 2)
         image_with_state = image_with_state.swapaxes(0, 1)
 
-        return image_all
+        return image_with_state
 
     def get_depth_gray_image(self):
         # get depth and rgb image
@@ -1189,12 +1195,12 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         # 5. Proximity penalty: soft penalty when entering pre-collision zone
         min_dist = self.min_distance_to_obstacles
+        reward_proximity = 0.0
         if D_COLLISION < min_dist < D_PRECOLLISION:
             reward_proximity = -50.0 / min_dist
 
-        # 6. Time penalty: encourage finishing quickly
-        elapsed_time = self.step_num * self.dynamic_model.dt
-        reward_time  = -0.01 * elapsed_time
+        # 6. Time penalty: encourage finishing quickly (constant step penalty)
+        reward_time  = -0.01
 
         reward = (
             reward_distance
