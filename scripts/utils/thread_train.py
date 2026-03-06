@@ -1,9 +1,10 @@
-from .custom_policy_sb3 import CNN_FC, CNN_GAP, CNN_GAP_BN, No_CNN, CNN_MobileNet, CNN_GAP_new, CNN_Spatial, No_CNN_Dual
+from .custom_policy_sb3 import CNN_FC, CNN_GAP, CNN_GAP_BN, No_CNN, CNN_MobileNet, CNN_GAP_new, CNN_Spatial, No_CNN_Dual, MultiModelEncoder
 import datetime
 import gym
 import gym_env
 import numpy as np
 from stable_baselines3 import TD3, PPO, SAC
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 from stable_baselines3.common.noise import NormalActionNoise
 from wandb.integration.sb3 import WandbCallback
 import wandb
@@ -97,7 +98,7 @@ class TrainingThread(QtCore.QThread):
         os.makedirs(data_path, exist_ok=True)  # create data path to save q_map
 
         # save config file
-        with open(config_path + '\config.ini', 'w') as configfile:
+        with open(os.path.join(config_path, 'config.ini'), 'w') as configfile:
             self.cfg.write(configfile)
 
         #! -----------------------------------policy selection-------------------------------------
@@ -132,13 +133,23 @@ class TrainingThread(QtCore.QThread):
                 policy_used = No_CNN
             elif policy_name == 'No_CNN_Dual':
                 policy_used = No_CNN_Dual
+            elif policy_name == 'Multi_Modal':
+                policy_used = MultiModelEncoder
             else:
                 raise Exception('policy select error: ', policy_name)
+
+            # Define total dimension for the feature extractor
+            if policy_name == 'Multi_Modal':
+                # MultiModelEncoder is internally fixed to 128*3 = 384
+                total_features_dim = 384
+            else:
+                # Standard policies use state_dim + cnn_dim
+                total_features_dim = feature_num_state + feature_num_cnn
 
             policy_kwargs = dict(
                 features_extractor_class=policy_used,
                 features_extractor_kwargs=dict(
-                    features_dim=feature_num_state + feature_num_cnn,
+                    features_dim=total_features_dim,
                     state_feature_dim=feature_num_state),
                 activation_fn=activation_function)
 
@@ -147,12 +158,19 @@ class TrainingThread(QtCore.QThread):
         policy_kwargs['net_arch'] = net_arch_list
 
         #! ---------------------------------algorithm selection-------------------------------------
+        # Multi_Modal requires 4 stacked frames; wrap env with VecFrameStack.
+        # Keep self.env as the raw gym env for PyQt signal access.
+        if policy_name == 'Multi_Modal':
+            train_env = VecFrameStack(DummyVecEnv([lambda: self.env]), n_stack=4)
+        else:
+            train_env = self.env
+
         algo = self.cfg.get('options', 'algo')
         print('algo: ', algo)
         if algo == 'PPO':
             model = PPO(
                 policy_base,
-                self.env,
+                train_env,
                 # n_steps = 200,
                 learning_rate=self.cfg.getfloat('DRL', 'learning_rate'),
                 policy_kwargs=policy_kwargs,
@@ -160,15 +178,9 @@ class TrainingThread(QtCore.QThread):
                 seed=0,
                 verbose=2)
         elif algo == 'SAC':
-            # n_actions = self.env.action_space.shape[-1]
-            # noise_sigma = self.cfg.getfloat(
-            #     'DRL', 'action_noise_sigma') * np.ones(n_actions)
-            # action_noise = NormalActionNoise(mean=np.zeros(n_actions),
-            #                                  sigma=noise_sigma)
             model = SAC(
                 policy_base,
-                self.env,
-                # action_noise=action_noise,
+                train_env,
                 policy_kwargs=policy_kwargs,
                 buffer_size=self.cfg.getint('DRL', 'buffer_size'),
                 gamma=self.cfg.getfloat('DRL', 'gamma'),
@@ -181,7 +193,6 @@ class TrainingThread(QtCore.QThread):
                 seed=0,
                 verbose=2)
         elif algo == 'TD3':
-            # The noise objects for TD3
             n_actions = self.env.action_space.shape[-1]
             noise_sigma = self.cfg.getfloat(
                 'DRL', 'action_noise_sigma') * np.ones(n_actions)
@@ -189,7 +200,7 @@ class TrainingThread(QtCore.QThread):
                                              sigma=noise_sigma)
             model = TD3(
                 policy_base,
-                self.env,
+                train_env,
                 action_noise=action_noise,
                 learning_rate=self.cfg.getfloat('DRL', 'learning_rate'),
                 gamma=self.cfg.getfloat('DRL', 'gamma'),
