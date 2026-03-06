@@ -528,6 +528,89 @@ class CNN_GAP_new(BaseFeaturesExtractor):
         return x
 
 
+class MultiModelEncoder(BaseFeaturesExtractor):
+    """
+    Multi-modal Encoder for 3-stream feature alignment: Depth, State, and LiDAR.
+
+    Each stream is mapped to 128 dimensions before concatenation.
+    Input: [B, 3 * n_stack, H, W] from VecFrameStack(n_stack=4) with 3-ch image.
+    Output: 384-dimensional vector (128*3).
+    """
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256, state_feature_dim=7):
+        # features_dim is overridden to 384 (128 * 3)
+        super(MultiModelEncoder, self).__init__(observation_space, 384)
+
+        self.feature_num_state_in = state_feature_dim
+        self.feature_num_lidar_in = 512 # 512 bins from environment
+        
+        self.feature_num_cnn       = 128
+        self.feature_num_state_out = 128
+        self.feature_num_lidar_out = 128
+        self._features_dim         = 384
+        self.feature_all           = None
+
+        # 1. Vision Stream (Depth): Input Ch 0 of each frame -> 128
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(4, 32, kernel_size=(4, 3), stride=2, padding=(1, 1)),
+            nn.ReLU(),
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=(4, 3), stride=2, padding=(1, 1)),
+            nn.ReLU(),
+        )
+        self.avg_pool = nn.AvgPool2d(kernel_size=2)
+        self.res_conv1 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+        self.res_conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+        self.res_relu  = nn.ReLU()
+        self.flatten   = nn.Flatten()
+        self.fc_vision = nn.Linear(64 * 8 * 8, 128)
+
+        # 2. State Stream: Input Ch 1 of each frame -> 128
+        self.state_encoder = nn.Sequential(
+            nn.Linear(self.feature_num_state_in, 128),
+            nn.ReLU()
+        )
+
+        # 3. LiDAR Stream: Input Ch 2 of each frame -> 128
+        self.lidar_encoder = nn.Sequential(
+            nn.Linear(self.feature_num_lidar_in, 128),
+            nn.ReLU()
+        )
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        # With VecFrameStack(n_stack=4) and 3-ch input, observations shape: [B, 12, H, W]
+        # Channel indexing: Depth (0,3,6,9), State (1,4,7,10), LiDAR (2,5,8,11)
+        
+        # 1. Process Depth (4 frames)
+        depth_frames = observations[:, 0::3, :, :]   # [B, 4, H, W]
+        depth_input = F.interpolate(depth_frames, size=(64, 64), mode='bilinear', align_corners=False)
+        x = self.conv1(depth_input)
+        x = self.conv2(x)
+        x = self.avg_pool(x)
+        identity = x
+        out = F.relu(self.res_conv1(x))
+        out = self.res_conv2(out)
+        out += identity
+        x = self.res_relu(out)
+        cnn_feature = F.relu(self.fc_vision(self.flatten(x)))
+
+        # 2. Process State (latest frame)
+        # In a 4-stack of 3-ch (0=D, 1=S, 2=L), latest state is at index 10 (3*3 + 1)
+        raw_state = observations[:, 10, 0, 0:self.feature_num_state_in]
+        state_feature = self.state_encoder(raw_state)
+
+        # 3. Process LiDAR (latest frame)
+        # In a 4-stack of 3-ch (0=D, 1=S, 2=L), latest LiDAR is at index 11 (3*3 + 2)
+        raw_lidar = observations[:, 11, 0, 0:self.feature_num_lidar_in]
+        lidar_feature = self.lidar_encoder(raw_lidar)
+
+        # 4. Concatenate All: 128 + 128 + 128 = 384
+        combined = th.cat((cnn_feature, state_feature, lidar_feature), dim=1)
+        self.feature_all = combined
+        return combined
+
+
 class CNN_Spatial(BaseFeaturesExtractor):
     """
     Hybrid policy: Combines the learnable filters of a CNN with the 
