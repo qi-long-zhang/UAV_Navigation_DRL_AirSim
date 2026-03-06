@@ -10,7 +10,7 @@
       "Sensors": {
         "LidarCustom": {
           "SensorType": 6,
-          "Enabled": true,
+          "Enabled": false,
           "NumberOfChannels": 1,
           "PointsPerSecond": 50000,
           "Range": 20,

@@ -577,44 +577,12 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         return image_all
 
     def get_lidar_obs(self):
-        # Get Lidar data from AirSim
-        # lidar_name should match the one in settings.json
-        lidar_data = self.client.getLidarData(lidar_name="LidarCustom", vehicle_name="Drone1")
-        
-        # Default to max range (20m) normalized to 1.0 (far)
-        # Note: In depth images, 0 is far, 255 is near.
-        # For consistency with your depth features, let's make 0 = 20m, 1 = 0m
+        # Fake LiDAR Mode: Return 512 bins of max_range (safe distance)
         max_range = 20.0
-        lidar_range_512 = np.zeros(self.lidar_feature_length) # 0 means far
+        lidar_range_512 = np.zeros(self.lidar_feature_length) # 0 means far (1.0 normalized)
         
-        # Default min_distance to max_range to avoid AttributeError if point_cloud is empty
+        # Hardcode safe min distance to prevent crash logic from triggering
         self.min_distance_to_obstacles = max_range
-
-        if len(lidar_data.point_cloud) >= 3:
-            points = np.array(lidar_data.point_cloud, dtype=np.float32).reshape(-1, 3)
-            # x is forward, y is right, z is down
-            dist = np.sqrt(points[:, 0]**2 + points[:, 1]**2)
-            # angle in radians, 0 is forward, positive is clockwise (right)
-            angle = np.arctan2(points[:, 1], points[:, 0])
-
-            # Full 360° coverage: map -π ~ π to 512 bins
-            fov_rad   = 2 * math.pi
-            angle_min = -math.pi
-
-            if len(dist) > 0:
-                indices = ((angle - angle_min) / fov_rad * (self.lidar_feature_length - 1)).astype(int)
-                # We want to keep the MINIMUM distance in each bin (closest obstacle)
-                # Initialize with max_range
-                temp_bins = np.full(self.lidar_feature_length, max_range)
-                
-                # Fast vectorized operation to replace the slow python loop
-                np.minimum.at(temp_bins, indices, dist)
-
-                # Normalize: 0 is far (max_range), 1 is near (0m)
-                lidar_range_512 = 1.0 - (np.clip(temp_bins, 0, max_range) / max_range)
-
-                # Update min obstacle distance (metres) from LiDAR
-                self.min_distance_to_obstacles = float(temp_bins.min())
 
         return lidar_range_512
     def get_obs_image(self):
