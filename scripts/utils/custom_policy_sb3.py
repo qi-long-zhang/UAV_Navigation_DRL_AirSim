@@ -574,8 +574,7 @@ class MultiModelEncoder(BaseFeaturesExtractor):
         # Channel indexing: Depth (0,2,4,6), State (1,3,5,7)
         
         # 1. Process Depth (4 frames)
-        depth_frames = observations[:, 0::2, :, :]   # [B, 4, H, W]
-        depth_input = F.interpolate(depth_frames, size=(64, 64), mode='bilinear', align_corners=False)
+        depth_input = observations[:, 0::2, :, :]   # [B, 4, H, W]
         x = self.conv1(depth_input)
         x = self.conv2(x)
         x = self.avg_pool(x)
