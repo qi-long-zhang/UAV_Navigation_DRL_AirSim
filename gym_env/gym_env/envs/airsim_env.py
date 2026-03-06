@@ -272,8 +272,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         self.trajectory_list = []
 
-        self.lidar_feature_length = 512
-
         # observation space vector or image
         if self.perception_type == "vector" or self.perception_type == "lgmd":
             self.observation_space = spaces.Box(
@@ -281,14 +279,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 high=1,
                 shape=(1, self.cnn_feature_length + self.state_feature_length),
                 dtype=np.float32,
-            )
-        elif self.perception_type == "hybrid":
-            # Hybrid mode: Packed Image (Depth, State, Lidar)
-            self.observation_space = spaces.Box(
-                low=0,
-                high=255,
-                shape=(self.screen_height, self.screen_width, 3),
-                dtype=np.uint8,
             )
         else:
             self.observation_space = spaces.Box(
@@ -532,60 +522,12 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             obs = self.get_obs_vector()
         elif self.perception_type == "lgmd":
             obs = self.get_obs_lgmd()
-        elif self.perception_type == "hybrid":
-            obs = self.get_obs_hybrid()
         else:
-            obs = self.get_obs_image()
+            obs = self.get_obs_depth()
 
         return obs
 
-    def get_obs_hybrid(self):
-        """
-        Hybrid mode: Returns a 3-channel uint8 image.
-        Ch 0: Depth image (resized)
-        Ch 1: State features (encoded in first row)
-        Ch 2: LiDAR features (encoded in first row)
-        """
-        # 1. Depth channel
-        depth_img = self.get_depth_image()
-        # Note: min_distance_to_obstacles is now updated solely by 360° LiDAR in get_lidar_obs()
-        # called below. This ensures a more robust safety evaluation in all directions.
-        
-        image_resize = cv2.resize(depth_img, (self.screen_width, self.screen_height))
-        image_scaled = (np.clip(image_resize, 0, self.max_depth_meters) / self.max_depth_meters * 255)
-        image_uint8 = (255 - image_scaled).astype(np.uint8)
-
-        # 2. State channel (Ensure 0-255)
-        state_feature_array = np.zeros((self.screen_height, self.screen_width), dtype=np.uint8)
-        state_feature = self.dynamic_model._get_state_feature()
-        state_feature_array[0, 0 : self.state_feature_length] = state_feature.astype(np.uint8)
-        
-        # 3. LiDAR channel (Ensure 0-255) - stored row-by-row (screen_width cols per row)
-        # 512 bins / 100 cols = 6 rows, fully preserving all 360° scan data
-        lidar_feature_array = np.zeros((self.screen_height, self.screen_width), dtype=np.uint8)
-        lidar_feature = self.get_lidar_obs()  # This updates self.min_distance_to_obstacles
-        lidar_data_uint8 = (lidar_feature * 255.0).astype(np.uint8)
-        num_lidar_rows = math.ceil(self.lidar_feature_length / self.screen_width)
-        for i in range(num_lidar_rows):
-            row_start = i * self.screen_width
-            row_end = min(row_start + self.screen_width, self.lidar_feature_length)
-            lidar_feature_array[i, 0:(row_end - row_start)] = lidar_data_uint8[row_start:row_end]
-
-        # Pack into (H, W, 3)
-        image_all = np.stack([image_uint8, state_feature_array, lidar_feature_array], axis=-1)
-
-        return image_all
-
-    def get_lidar_obs(self):
-        # Fake LiDAR Mode: Return 512 bins of max_range (safe distance)
-        max_range = 20.0
-        lidar_range_512 = np.zeros(self.lidar_feature_length) # 0 means far (1.0 normalized)
-        
-        # Hardcode safe min distance to prevent crash logic from triggering
-        self.min_distance_to_obstacles = max_range
-
-        return lidar_range_512
-    def get_obs_image(self):
+    def get_obs_depth(self):
         # Normal mode: get depth image then transfer to matrix with state
         # 1. get current depth image and transfer to 0-255  0-20m 255-0m
         image = self.get_depth_image()  # 0-6550400.0 float 32
