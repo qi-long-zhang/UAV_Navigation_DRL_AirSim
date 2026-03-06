@@ -315,69 +315,13 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         )
 
     def reset(self):
-        # implement random start within learning starts
-        if self.total_step < self.learning_starts:
-            # Random start within mission-to-goal corridor.
-            goal_pos = self.dynamic_model.goal_position
-            start_pos = self.mission_start_position
-
-            # Calculate vector and distance in XY plane.
-            vec_x = goal_pos[0] - start_pos[0]
-            vec_y = goal_pos[1] - start_pos[1]
-            dist_xy = math.sqrt(vec_x**2 + vec_y**2)
-
-            # Perpendicular unit vector for width offset.
-            unit_perp_x = -vec_y / dist_xy
-            unit_perp_y = vec_x / dist_xy
-
-            while True:
-                # Alpha: progress along the line (0.0 to 0.9 to keep away from goal).
-                # Beta: perpendicular offset (-7.5m to +7.5m).
-                alpha = np.random.uniform(0.0, 0.9)
-                beta = np.random.uniform(-7.5, 7.5)
-
-                rand_x = start_pos[0] + alpha * vec_x + beta * unit_perp_x
-                rand_y = start_pos[1] + alpha * vec_y + beta * unit_perp_y
-                rand_z = 5.0
-
-                # Skip points outside workspace if workspace is configured.
-                if (
-                    self.work_space_x is not None
-                    and self.work_space_y is not None
-                    and not (
-                        self.work_space_x[0] < rand_x < self.work_space_x[1]
-                        and self.work_space_y[0] < rand_y < self.work_space_y[1]
-                    )
-                ):
-                    continue
-
-                self.dynamic_model.set_start(
-                    [rand_x, rand_y, rand_z],
-                    random_angle=math.pi * 2,
-                    yaw_offset=0,
-                )
-                self.dynamic_model.reset()
-
-                # Force synchronization so depth/collision are up-to-date.
-                self.client.simPause(False)
-                self.client.simContinueForTime(0.01)
-                self.client.simPause(True)
-
-                # Check safety: depth min >= 2.0m and no collision.
-                self.min_distance_to_obstacles = self.get_depth_image().min()
-                if (
-                    self.min_distance_to_obstacles >= 2.0
-                    and not self.client.simGetCollisionInfo().has_collided
-                ):
-                    break
-        else:
-            # Outside learning starts, always use mission start.
-            self.dynamic_model.set_start(
-                self.mission_start_position,
-                random_angle=self.mission_start_random_angle,
-                yaw_offset=self.mission_start_yaw_offset,
-            )
-            self.dynamic_model.reset()
+        # Always use mission start position
+        self.dynamic_model.set_start(
+            self.mission_start_position,
+            random_angle=self.mission_start_random_angle,
+            yaw_offset=self.mission_start_yaw_offset,
+        )
+        self.dynamic_model.reset()
 
         self.episode_num += 1
         self.step_num = 0
@@ -407,8 +351,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self._term_is_timeout = False
 
         obs = self.get_obs()
-
         return obs
+
 
     def step(self, action):
         # set action
@@ -1070,17 +1014,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         D_COLLISION    = self.collision_distance
         D_PRECOLLISION = self.precollision_distance
 
-        if done:
-            if self._term_is_success:
-                return REWARD_REACH
-            elif self._term_is_crashed:
-                return REWARD_CRASH
-            elif self._term_is_not_in_workspace:
-                return REWARD_OUTSIDE
-            elif self._term_is_timeout:
-                return REWARD_TIMEOUT
-            return 0
-
         # 1. Distance reward: encourage closing the gap to goal
         reward_distance = 10.0 * (
             self.previous_distance_to_goal - self.current_distance_to_goal
@@ -1110,7 +1043,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             reward_proximity = -50.0 / min_dist
 
         # 6. Time penalty: encourage finishing quickly (constant step penalty)
-        reward_time  = -0.01
+        reward_time  = -0.01 * (self.step_num * self.dynamic_model.dt)
 
         reward = (
             reward_distance
@@ -1120,6 +1053,16 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             + reward_proximity
             + reward_time
         )
+
+        if done:
+            if self._term_is_success:
+                reward += REWARD_REACH
+            elif self._term_is_crashed:
+                reward += REWARD_CRASH
+            elif self._term_is_not_in_workspace:
+                reward += REWARD_OUTSIDE
+            elif self._term_is_timeout:
+                reward += REWARD_TIMEOUT
 
         self.previous_action = np.copy(action)
         return reward
