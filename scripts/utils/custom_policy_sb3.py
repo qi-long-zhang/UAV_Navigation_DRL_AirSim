@@ -542,7 +542,9 @@ class MultiModelEncoder(BaseFeaturesExtractor):
         super(MultiModelEncoder, self).__init__(observation_space, 384)
 
         self.feature_num_state_in = state_feature_dim
-        self.feature_num_lidar_in = 512 # 512 bins from environment
+        self.feature_num_lidar_in = 512  # 512 bins from environment
+        self._lidar_row_width = 100      # must match env screen_width
+        self._lidar_rows = (self.feature_num_lidar_in + self._lidar_row_width - 1) // self._lidar_row_width  # = 6
         
         self.feature_num_cnn       = 128
         self.feature_num_state_out = 128
@@ -600,9 +602,11 @@ class MultiModelEncoder(BaseFeaturesExtractor):
         raw_state = observations[:, 10, 0, 0:self.feature_num_state_in]
         state_feature = self.state_encoder(raw_state)
 
-        # 3. Process LiDAR (latest frame)
+        # 3. Process LiDAR (latest frame) - reassemble from multi-row storage
         # In a 4-stack of 3-ch (0=D, 1=S, 2=L), latest LiDAR is at index 11 (3*3 + 2)
-        raw_lidar = observations[:, 11, 0, 0:self.feature_num_lidar_in]
+        # Rows 0.._lidar_rows-1 in ch 11 hold 512 bins packed at screen_width per row
+        raw_lidar_rows = observations[:, 11, 0:self._lidar_rows, :]          # [B, 6, 100]
+        raw_lidar = raw_lidar_rows.reshape(raw_lidar_rows.shape[0], -1)[:, :self.feature_num_lidar_in]  # [B, 512]
         lidar_feature = self.lidar_encoder(raw_lidar)
 
         # 4. Concatenate All: 128 + 128 + 128 = 384
