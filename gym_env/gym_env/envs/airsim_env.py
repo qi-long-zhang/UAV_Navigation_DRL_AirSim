@@ -259,7 +259,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         # other settings
         self.max_episode_steps = cfg.getint("environment", "max_steps")
-        self.crash_distance = cfg.getfloat("environment", "crash_distance")
+        self.collision_distance = cfg.getfloat("environment", "collision_distance")
+        self.precollision_distance = cfg.getfloat("environment", "precollision_distance")
         self.accept_radius = cfg.getint("environment", "accept_radius")
 
         self.max_depth_meters = cfg.getint("environment", "max_depth_meters")
@@ -268,6 +269,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         self.trajectory_list = []
 
+        self.lidar_feature_length = 512
+
         # observation space vector or image
         if self.perception_type == "vector" or self.perception_type == "lgmd":
             self.observation_space = spaces.Box(
@@ -275,6 +278,14 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 high=1,
                 shape=(1, self.cnn_feature_length + self.state_feature_length),
                 dtype=np.float32,
+            )
+        elif self.perception_type == "hybrid":
+            # Hybrid mode: Packed Image (Depth, State, Lidar)
+            self.observation_space = spaces.Box(
+                low=0,
+                high=255,
+                shape=(self.screen_height, self.screen_width, 3),
+                dtype=np.uint8,
             )
         else:
             self.observation_space = spaces.Box(
@@ -357,9 +368,11 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 self.client.simContinueForTime(0.01)
                 self.client.simPause(True)
 
-                # Check safety: min distance to obs >= 2.0m and no collision
+                # Check safety using 360° LiDAR: min distance to obs >= 2.0m and no collision
+                # This ensures the drone isn't spawned too close to any obstacle in any direction.
+                self.get_lidar_obs() 
                 if (
-                    self.get_depth_image().min() >= 2.0
+                    self.min_distance_to_obstacles >= 2.0
                     and not self.client.simGetCollisionInfo().has_collided
                 ):
                     break
@@ -390,6 +403,9 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         actual_dist = self.get_distance_to_goal()
         self.previous_distance_to_goal = actual_dist
         self.current_distance_to_goal = actual_dist
+
+        # Initialize previous_action for smoothness reward
+        self.previous_action = np.zeros(self.action_space.shape[0])
 
         self.trajectory_list = []
         self._term_is_success = False
@@ -467,6 +483,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             reward = self.compute_reward_single_goal(done, action)
         elif self.reward_type == "reward_custom":
             reward = self.compute_reward_custom(done, action)
+        elif self.reward_type == "reward_paper":
+            reward = self.compute_reward_paper(done, action)
         else:
             reward = self.compute_reward(done, action)
 
@@ -567,10 +585,87 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             obs = self.get_obs_vector()
         elif self.perception_type == "lgmd":
             obs = self.get_obs_lgmd()
+        elif self.perception_type == "hybrid":
+            obs = self.get_obs_hybrid()
         else:
             obs = self.get_obs_image()
 
         return obs
+
+    def get_obs_hybrid(self):
+        """
+        Hybrid mode: Returns a 3-channel uint8 image.
+        Ch 0: Depth image (resized)
+        Ch 1: State features (encoded in first row)
+        Ch 2: LiDAR features (encoded in first row)
+        """
+        # 1. Depth channel
+        depth_img = self.get_depth_image()
+        # Note: min_distance_to_obstacles is now updated solely by 360° LiDAR in get_lidar_obs()
+        # called below. This ensures a more robust safety evaluation in all directions.
+        
+        image_resize = cv2.resize(depth_img, (self.screen_width, self.screen_height))
+        image_scaled = (np.clip(image_resize, 0, self.max_depth_meters) / self.max_depth_meters * 255)
+        image_uint8 = (255 - image_scaled).astype(np.uint8)
+
+        # 2. State channel (Ensure 0-255)
+        state_feature_array = np.zeros((self.screen_height, self.screen_width), dtype=np.uint8)
+        state_feature = self.dynamic_model._get_state_feature()
+        state_feature_array[0, 0 : self.state_feature_length] = (state_feature * 255.0).astype(np.uint8)
+        
+        # 3. LiDAR channel (Ensure 0-255)
+        lidar_feature_array = np.zeros((self.screen_height, self.screen_width), dtype=np.uint8)
+        lidar_feature = self.get_lidar_obs() # This updates self.min_distance_to_obstacles
+        
+        # Guard against screen_width < 512 to prevent index crash
+        lidar_data_uint8 = (lidar_feature * 255.0).astype(np.uint8)
+        max_to_fill = min(self.screen_width, self.lidar_feature_length)
+        lidar_feature_array[0, 0 : max_to_fill] = lidar_data_uint8[:max_to_fill]
+
+        # Pack into (H, W, 3)
+        image_all = np.stack([image_uint8, state_feature_array, lidar_feature_array], axis=-1)
+
+        return image_all
+
+    def get_lidar_obs(self):
+        # Get Lidar data from AirSim
+        # lidar_name should match the one in settings.json
+        lidar_data = self.client.getLidarData(lidar_name="LidarCustom", vehicle_name="Drone1")
+        
+        # Default to max range (20m) normalized to 1.0 (far)
+        # Note: In depth images, 0 is far, 255 is near. 
+        # For consistency with your depth features, let's make 0 = 20m, 1 = 0m
+        max_range = 20.0
+        lidar_range_128 = np.zeros(self.lidar_feature_length) # 0 means far
+        
+        if len(lidar_data.point_cloud) >= 3:
+            points = np.array(lidar_data.point_cloud, dtype=np.float32).reshape(-1, 3)
+            # x is forward, y is right, z is down
+            dist = np.sqrt(points[:, 0]**2 + points[:, 1]**2)
+            # angle in radians, 0 is forward, positive is clockwise (right)
+            angle = np.arctan2(points[:, 1], points[:, 0]) 
+
+            # Full 360° coverage: map -π ~ π to 128 bins
+            fov_rad   = 2 * math.pi
+            angle_min = -math.pi
+
+            if len(dist) > 0:
+                indices = ((angle - angle_min) / fov_rad * (self.lidar_feature_length - 1)).astype(int)
+                # We want to keep the MINIMUM distance in each bin (closest obstacle)
+                # Initialize with max_range
+                temp_bins = np.full(self.lidar_feature_length, max_range)
+                for i in range(len(dist)):
+                    idx = indices[i]
+                    if dist[i] < temp_bins[idx]:
+                        temp_bins[idx] = dist[i]
+                
+                # Normalize: 0 is far (max_range), 1 is near (0m)
+                lidar_range_128 = 1.0 - (np.clip(temp_bins, 0, max_range) / max_range)
+
+                # Update min obstacle distance (metres) from LiDAR
+                self.min_distance_to_obstacles = float(temp_bins.min())
+
+        return lidar_range_128
 
     def get_obs_image(self):
         # Normal mode: get depth image then transfer to matrix with state
@@ -597,7 +692,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         image_with_state = image_with_state.swapaxes(0, 2)
         image_with_state = image_with_state.swapaxes(0, 1)
 
-        return image_with_state
+        return image_all
 
     def get_depth_gray_image(self):
         # get depth and rgb image
@@ -841,7 +936,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             if self.min_distance_to_obstacles < 10:
                 punishment_obs = 1 - np.clip(
-                    (self.min_distance_to_obstacles - self.crash_distance) / 5, 0, 1
+                    (self.min_distance_to_obstacles - self.collision_distance) / 5, 0, 1
                 )
             else:
                 punishment_obs = 0
@@ -921,7 +1016,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             if self.min_distance_to_obstacles < 10:
                 punishment_obs = 1 - np.clip(
-                    (self.min_distance_to_obstacles - self.crash_distance) / 5, 0, 1
+                    (self.min_distance_to_obstacles - self.collision_distance) / 5, 0, 1
                 )
             else:
                 punishment_obs = 0
@@ -1004,8 +1099,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             if self.min_distance_to_obstacles < 2.0:
                 punishment_obs = 1 - np.clip(
-                    (self.min_distance_to_obstacles - self.crash_distance)
-                    / (2.0 - self.crash_distance),
+                    (self.min_distance_to_obstacles - self.collision_distance)
+                    / (2.0 - self.collision_distance),
                     0,
                     1,
                 )
@@ -1048,6 +1143,71 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         return reward
 
+    def compute_reward_paper(self, done, action):
+        # --- Terminal rewards ---
+        REWARD_REACH   =  200
+        REWARD_CRASH   = -100
+        REWARD_OUTSIDE = -100
+        REWARD_TIMEOUT = -100
+
+        # --- Obstacle distance thresholds (metres, from config) ---
+        D_COLLISION    = self.collision_distance
+        D_PRECOLLISION = self.precollision_distance
+
+        if done:
+            if self._term_is_success:
+                return REWARD_REACH
+            elif self._term_is_crashed:
+                return REWARD_CRASH
+            elif self._term_is_not_in_workspace:
+                return REWARD_OUTSIDE
+            elif self._term_is_timeout:
+                return REWARD_TIMEOUT
+            return 0
+
+        # 1. Distance reward: encourage closing the gap to goal
+        reward_distance = 10.0 * (
+            self.previous_distance_to_goal - self.current_distance_to_goal
+        )
+
+        # 2. Forward-motion reward: reward positive linear velocity
+        v_t   = action[0]
+        v_max = self.dynamic_model.v_xy_max
+        reward_forward = 2.0 * (v_t / v_max) if v_t >= 0 else 0.0
+
+        # 3. Heading-alignment reward: reward facing the goal
+        yaw_error_rad  = math.radians(self.dynamic_model.state_raw[2])
+        reward_heading = 5.0 * math.cos(yaw_error_rad)
+
+        # 4. Smoothness reward: penalise abrupt changes in v and yaw-rate
+        v_prev = self.previous_action[0]
+        w_t    = action[-1]
+        w_prev = self.previous_action[-1]
+        w_max  = self.dynamic_model.yaw_rate_max_rad
+        delta_a = ((v_t - v_prev) / v_max) ** 2 + ((w_t - w_prev) / w_max) ** 2
+        reward_smoothness = -0.5 * delta_a
+
+        # 5. Proximity penalty: soft penalty when entering pre-collision zone
+        min_dist = self.min_distance_to_obstacles
+        if D_COLLISION < min_dist < D_PRECOLLISION:
+            reward_proximity = -50.0 / min_dist
+
+        # 6. Time penalty: encourage finishing quickly
+        elapsed_time = self.step_num * self.dynamic_model.dt
+        reward_time  = -0.01 * elapsed_time
+
+        reward = (
+            reward_distance
+            + reward_forward
+            + reward_heading
+            + reward_smoothness
+            + reward_proximity
+            + reward_time
+        )
+
+        self.previous_action = np.copy(action)
+        return reward
+
     def compute_reward_final_fixedwing(self, done, action):
         reward = 0
         reward_reach = 10
@@ -1077,7 +1237,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             if self.min_distance_to_obstacles < 20:
                 punishment_obs = 1 - np.clip(
-                    (self.min_distance_to_obstacles - self.crash_distance) / 15, 0, 1
+                    (self.min_distance_to_obstacles - self.collision_distance) / 15, 0, 1
                 )
             else:
                 punishment_obs = 0
@@ -1178,8 +1338,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             # obs_punish_distance = 15
             # if self.min_distance_to_obstacles < obs_punish_distance:
             #     obs_cost = 1 - (self.min_distance_to_obstacles -
-            #                     self.crash_distance) / (obs_punish_distance -
-            #                                             self.crash_distance)
+            #                     self.collision_distance) / (obs_punish_distance -
+            #                                             self.collision_distance)
             #     obs_cost = 0.5 * obs_cost ** 2
             # reward = reward_distance - (2 * relative_yaw_cost + 0.5 * action_cost + obs_cost)
 
@@ -1226,8 +1386,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             obs_punish_dist = 5
             if self.min_distance_to_obstacles < obs_punish_dist:
                 obs_cost = 1 - (
-                    self.min_distance_to_obstacles - self.crash_distance
-                ) / (obs_punish_dist - self.crash_distance)
+                    self.min_distance_to_obstacles - self.collision_distance
+                ) / (obs_punish_dist - self.collision_distance)
                 obs_cost = 0.5 * obs_cost**2
             reward = -(2 * relative_yaw_cost + 0.5 * action_cost)
         else:
@@ -1391,7 +1551,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         collision_info = self.client.simGetCollisionInfo()
         return (
             collision_info.has_collided
-            or self.min_distance_to_obstacles < self.crash_distance
+            or self.min_distance_to_obstacles < self.collision_distance
         )
 
     # ! ----------- useful functions-------------------------------------------
