@@ -140,8 +140,8 @@ class TrainingThread(QtCore.QThread):
 
             # Define total dimension for the feature extractor
             if policy_name == 'Multi_Modal':
-                # MultiModelEncoder is internally fixed to 128*3 = 384
-                total_features_dim = 384
+                # MultiModelEncoder is internally fixed to 128*2 = 256
+                total_features_dim = 256
             else:
                 # Standard policies use state_dim + cnn_dim
                 total_features_dim = feature_num_state + feature_num_cnn

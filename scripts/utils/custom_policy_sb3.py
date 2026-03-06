@@ -530,27 +530,22 @@ class CNN_GAP_new(BaseFeaturesExtractor):
 
 class MultiModelEncoder(BaseFeaturesExtractor):
     """
-    Multi-modal Encoder for 3-stream feature alignment: Depth, State, and LiDAR.
+    Multi-modal Encoder for 2-stream feature alignment: Depth and State.
 
     Each stream is mapped to 128 dimensions before concatenation.
-    Input: [B, 3 * n_stack, H, W] from VecFrameStack(n_stack=4) with 3-ch image.
-    Output: 384-dimensional vector (128*3).
+    Input: [B, 2 * n_stack, H, W] from VecFrameStack(n_stack=4) with 2-ch image.
+    Output: 256-dimensional vector (128 + 128).
     """
 
     def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256, state_feature_dim=7):
-        # features_dim is overridden to 384 (128 * 3)
-        super(MultiModelEncoder, self).__init__(observation_space, 384)
+        # features_dim is overridden to 256 (128 + 128)
+        super(MultiModelEncoder, self).__init__(observation_space, 256)
 
         self.feature_num_state_in = state_feature_dim
-        self.feature_num_lidar_in = 512  # 512 bins from environment
-        self._lidar_row_width = 100      # must match env screen_width
-        self._lidar_rows = (self.feature_num_lidar_in + self._lidar_row_width - 1) // self._lidar_row_width  # = 6
-        
-        self.feature_num_cnn       = 128
+        self.feature_num_cnn = 128
         self.feature_num_state_out = 128
-        self.feature_num_lidar_out = 128
-        self._features_dim         = 384
-        self.feature_all           = None
+        self._features_dim = 256
+        self.feature_all = None
 
         # 1. Vision Stream (Depth): Input Ch 0 of each frame -> 128
         self.conv1 = nn.Sequential(
@@ -574,18 +569,12 @@ class MultiModelEncoder(BaseFeaturesExtractor):
             nn.ReLU()
         )
 
-        # 3. LiDAR Stream: Input Ch 2 of each frame -> 128
-        self.lidar_encoder = nn.Sequential(
-            nn.Linear(self.feature_num_lidar_in, 128),
-            nn.ReLU()
-        )
-
     def forward(self, observations: th.Tensor) -> th.Tensor:
-        # With VecFrameStack(n_stack=4) and 3-ch input, observations shape: [B, 12, H, W]
-        # Channel indexing: Depth (0,3,6,9), State (1,4,7,10), LiDAR (2,5,8,11)
+        # With VecFrameStack(n_stack=4) and 2-ch input, observations shape: [B, 8, H, W]
+        # Channel indexing: Depth (0,2,4,6), State (1,3,5,7)
         
         # 1. Process Depth (4 frames)
-        depth_frames = observations[:, 0::3, :, :]   # [B, 4, H, W]
+        depth_frames = observations[:, 0::2, :, :]   # [B, 4, H, W]
         depth_input = F.interpolate(depth_frames, size=(64, 64), mode='bilinear', align_corners=False)
         x = self.conv1(depth_input)
         x = self.conv2(x)
@@ -598,19 +587,12 @@ class MultiModelEncoder(BaseFeaturesExtractor):
         cnn_feature = F.relu(self.fc_vision(self.flatten(x)))
 
         # 2. Process State (latest frame)
-        # In a 4-stack of 3-ch (0=D, 1=S, 2=L), latest state is at index 10 (3*3 + 1)
-        raw_state = observations[:, 10, 0, 0:self.feature_num_state_in]
+        # In a 4-stack of 2-ch (0=D, 1=S), latest state is at index 7 (3*2 + 1)
+        raw_state = observations[:, 7, 0, 0:self.feature_num_state_in]
         state_feature = self.state_encoder(raw_state)
 
-        # 3. Process LiDAR (latest frame) - reassemble from multi-row storage
-        # In a 4-stack of 3-ch (0=D, 1=S, 2=L), latest LiDAR is at index 11 (3*3 + 2)
-        # Rows 0.._lidar_rows-1 in ch 11 hold 512 bins packed at screen_width per row
-        raw_lidar_rows = observations[:, 11, 0:self._lidar_rows, :]          # [B, 6, 100]
-        raw_lidar = raw_lidar_rows.reshape(raw_lidar_rows.shape[0], -1)[:, :self.feature_num_lidar_in]  # [B, 512]
-        lidar_feature = self.lidar_encoder(raw_lidar)
-
-        # 4. Concatenate All: 128 + 128 + 128 = 384
-        combined = th.cat((cnn_feature, state_feature, lidar_feature), dim=1)
+        # 3. Concatenate All: 128 + 128 = 256
+        combined = th.cat((cnn_feature, state_feature), dim=1)
         self.feature_all = combined
         return combined
 
