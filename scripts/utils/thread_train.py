@@ -6,6 +6,8 @@ import numpy as np
 from stable_baselines3 import TD3, PPO, SAC
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 from stable_baselines3.common.noise import NormalActionNoise
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.env_util import is_wrapped
 from wandb.integration.sb3 import WandbCallback
 import wandb
 from PyQt5 import QtCore
@@ -161,7 +163,9 @@ class TrainingThread(QtCore.QThread):
         # Multi_Modal requires 4 stacked frames; wrap env with VecFrameStack.
         # Keep self.env as the raw gym env for PyQt signal access.
         if policy_name == 'Multi_Modal':
-            train_env = VecFrameStack(DummyVecEnv([lambda: self.env]), n_stack=4)
+            # Use Monitor for ep_rew_mean but don't overwrite self.env to preserve PyQt signals
+            monitored_env = self.env if is_wrapped(self.env, Monitor) else Monitor(self.env)
+            train_env = VecFrameStack(DummyVecEnv([lambda: monitored_env]), n_stack=4)
         else:
             train_env = self.env
 
