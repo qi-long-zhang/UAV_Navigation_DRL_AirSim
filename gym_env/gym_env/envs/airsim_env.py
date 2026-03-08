@@ -210,20 +210,20 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
             custom_routes = {
                 1: {
-                    "start": [-23, -13, 5],
-                    "goal": [23, 13, 5],
+                    "start": [-14, -7, 5],
+                    "goal": [14, 7, 5],
                     "yaw_offset_deg": 0,
                     "yaw_random_deg": 90,
                 },
                 2: {
-                    "start": [-23, 0, 5],
-                    "goal": [23, 0, 5],
+                    "start": [-14, 0, 5],
+                    "goal": [14, 0, 5],
                     "yaw_offset_deg": -60,
                     "yaw_random_deg": 120,
                 },
                 3: {
-                    "start": [-23, 13, 5],
-                    "goal": [23, -13, 5],
+                    "start": [-14, 7, 5],
+                    "goal": [14, -7, 5],
                     "yaw_offset_deg": -90,
                     "yaw_random_deg": 90,
                 },
@@ -241,9 +241,9 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 yaw_offset=math.radians(route_cfg["yaw_offset_deg"]),
             )
             self.dynamic_model.set_goal_position(goal_position)
-            self.work_space_x = [-25, 25]
-            self.work_space_y = [-15, 15]
-            self.work_space_z = [0.5, 15]
+            self.work_space_x = [-15, 15]
+            self.work_space_y = [-8, 8]
+            self.work_space_z = [0.5, 10]
         else:
             raise Exception("Invalid env_name!", self.env_name)
 
@@ -340,10 +340,10 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 unit_perp_y = vec_x / dist_xy
 
                 while True:
-                    # Alpha: progress along the line (0.0 to 0.9 to keep away from goal).
-                    # Beta: perpendicular offset (-7.5m to +7.5m).
-                    alpha = np.random.uniform(0.0, 0.9)
-                    beta = np.random.uniform(-7.5, 7.5)
+                    # Alpha: progress along the line (0.1 to 0.9 to keep away from goal).
+                    # Beta: perpendicular offset (-5m to +5m).
+                    alpha = np.random.uniform(0.1, 0.9)
+                    beta = np.random.uniform(-5.0, 5.0)
 
                     rand_x = start_pos[0] + alpha * vec_x + beta * unit_perp_x
                     rand_y = start_pos[1] + alpha * vec_y + beta * unit_perp_y
