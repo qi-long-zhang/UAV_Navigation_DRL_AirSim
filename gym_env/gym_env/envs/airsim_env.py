@@ -1073,7 +1073,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         REWARD_REACH   =  200
         REWARD_CRASH   = -100
         REWARD_OUTSIDE = -100
-        REWARD_TIMEOUT = -100
 
         # --- Obstacle distance thresholds (metres, from config) ---
         D_COLLISION    = self.collision_distance
@@ -1126,8 +1125,6 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 reward += REWARD_CRASH
             elif self._term_is_not_in_workspace:
                 reward += REWARD_OUTSIDE
-            elif self._term_is_timeout:
-                reward += REWARD_TIMEOUT
 
         self.previous_action = np.copy(action)
         return reward
