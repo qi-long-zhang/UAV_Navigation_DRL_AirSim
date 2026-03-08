@@ -582,10 +582,10 @@ class TrainingUi(QWidget):
                 self.background_img.setZValue(-100)
 
                 # Custom env uses UI horizontal axis as Y and vertical axis as X.
-                self.background_img.setRect(pg.QtCore.QRectF(-15, -25, 30, 50))
+                self.background_img.setRect(pg.QtCore.QRectF(-8, -15, 16, 30))
 
-                self.traj_pw.setXRange(max=15, min=-15)
-                self.traj_pw.setYRange(max=25, min=-25)
+                self.traj_pw.setXRange(max=8, min=-8)
+                self.traj_pw.setYRange(max=15, min=-15)
                 self.traj_pw.setLabel('bottom', 'Y Position', units='m')
                 self.traj_pw.setLabel('left', 'X Position', units='m')
                 self.traj_pw.getViewBox().invertY(False)
