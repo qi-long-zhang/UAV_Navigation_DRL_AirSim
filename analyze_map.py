@@ -8,6 +8,7 @@ def analyze_shapes(image_path):
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     height, width = gray.shape
+    print(f"Image Dimensions: Width={width}, Height={height}")
     
     # Try different thresholds or edges
     edges = cv2.Canny(gray, 50, 150)
