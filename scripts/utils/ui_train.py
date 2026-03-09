@@ -474,7 +474,7 @@ class TrainingUi(QWidget):
             self.plot_xy_goal = self.traj_pw_xy.plot(symbol='star', symbolBrush='#dc3545', symbolPen='w', symbolSize=18)
             # 4. 航向箭头 (当前前进方向)
             self.heading_arrow_xy = pg.ArrowItem(
-                angle=0, tipAngle=35, baseAngle=15, headLen=10,
+                angle=0, tipAngle=35, baseAngle=15, headLen=8,
                 tailLen=0, pen=pg.mkPen('#b22222', width=1), brush='#e63946'
             )
             self.heading_arrow_xy.setVisible(False)
@@ -708,7 +708,7 @@ class TrainingUi(QWidget):
                     ax, ay = float(trajectory_list[-1, 0]), float(trajectory_list[-1, 1])
                     angle = math.degrees(math.atan2(-vy, -vx))
                 arrow = pg.ArrowItem(
-                    angle=angle, tipAngle=35, baseAngle=15, headLen=10,
+                    angle=angle, tipAngle=35, baseAngle=15, headLen=8,
                     tailLen=0, pen=pg.mkPen('#b22222', width=1), brush='#e63946'
                 )
                 arrow.setPos(ax, ay)
