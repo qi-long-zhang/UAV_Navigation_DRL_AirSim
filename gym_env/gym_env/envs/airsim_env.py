@@ -596,7 +596,9 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         # Normal mode: get depth image then transfer to matrix with state
         # 1. get current depth image and transfer to 0-255  0-20m 255-0m
         image = self.get_depth_image()  # 0-6550400.0 float 32
-        image_resize = cv2.resize(image, (self.screen_width, self.screen_height))
+        image_resize = cv2.resize(
+            image, (self.screen_width, self.screen_height), interpolation=cv2.INTER_AREA
+        )
         self.min_distance_to_obstacles = image.min()
         # switch 0 and 255
         image_scaled = (
