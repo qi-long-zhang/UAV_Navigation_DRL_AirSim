@@ -340,9 +340,9 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 unit_perp_y = vec_x / dist_xy
 
                 while True:
-                    # Alpha: progress along the line (0.1 to 0.9 to keep away from goal).
+                    # Alpha: progress along the line (0.5 to 0.95 to spawn closer to goal).
                     # Beta: perpendicular offset (-5m to +5m).
-                    alpha = np.random.uniform(0.1, 0.9)
+                    alpha = np.random.uniform(0.5, 0.95)
                     beta = np.random.uniform(-5.0, 5.0)
 
                     rand_x = start_pos[0] + alpha * vec_x + beta * unit_perp_x
@@ -1072,9 +1072,9 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
     def compute_reward_paper(self, done, action):
         # --- Terminal rewards ---
-        REWARD_REACH   =  200
-        REWARD_CRASH   = -100
-        REWARD_OUTSIDE = -100
+        REWARD_REACH   =  1000  # 极大提高到达奖励
+        REWARD_CRASH   = -1000
+        REWARD_OUTSIDE = -1000
 
         # --- Obstacle distance thresholds (metres, from config) ---
         D_COLLISION    = self.collision_distance
@@ -1088,11 +1088,13 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         # 2. Forward-motion reward: reward positive linear velocity
         v_t   = action[0]
         v_max = self.dynamic_model.v_xy_max
-        reward_forward = 2.0 * (v_t / v_max) if v_t >= 0 else 0.0
+        # reward_forward = 2.0 * (v_t / v_max) if v_t >= 0 else 0.0
+        reward_forward = 0.0
 
         # 3. Heading-alignment reward: reward facing the goal
         yaw_error_rad  = math.radians(self.dynamic_model.state_raw[2])
-        reward_heading = 5.0 * math.cos(yaw_error_rad)
+        # reward_heading = 5.0 * math.cos(yaw_error_rad)
+        reward_heading = 0.0
 
         # 4. Smoothness reward: penalise abrupt changes in v and yaw-rate
         v_prev = self.previous_action[0]
@@ -1106,10 +1108,10 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         min_dist = self.min_distance_to_obstacles
         reward_proximity = 0.0
         if D_COLLISION < min_dist < D_PRECOLLISION:
-            reward_proximity = -50.0 / min_dist
+            reward_proximity = -10.0 * (D_PRECOLLISION - min_dist) / (D_PRECOLLISION - D_COLLISION)
 
         # 6. Time penalty: encourage finishing quickly (constant step penalty)
-        reward_time  = -0.01 * (self.step_num * self.dynamic_model.dt)
+        reward_time  = -1.0
 
         reward = (
             reward_distance
